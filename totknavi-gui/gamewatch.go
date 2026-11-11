@@ -306,4 +306,5 @@ func (a *App) onGameGone() {
 	} else {
 		a.guiLog("游戏已退出（%s PID %d）", name, pid)
 	}
+	a.restoreNaviWindowIfNeeded()
 }

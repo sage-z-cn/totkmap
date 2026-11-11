@@ -75,6 +75,11 @@ type App struct {
 	gameRunning bool   // 游戏是否在运行（去抖后）
 	userStopped bool   // 用户手动停止过核心 → 本局不再自动启动
 	coreGamePid uint32 // 核心当前服务的游戏 PID（用于识别游戏重启）
+
+	// 定位后自动移屏的还原快照（window_layout.go）
+	windowSaved      bool
+	savedPlacement   wlWindowPlacement
+	moveTargetHandle uintptr
 }
 
 // Config GUI 持久化配置（xnavi-gui-config.json）。

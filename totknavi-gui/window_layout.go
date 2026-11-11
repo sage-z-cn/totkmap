@@ -29,6 +29,7 @@ var (
 	wlMonitorFromWindow   = wlUser32.NewProc("MonitorFromWindow")
 	wlGetWindowPlacement  = wlUser32.NewProc("GetWindowPlacement")
 	wlSetWindowPlacement  = wlUser32.NewProc("SetWindowPlacement")
+	wlIsZoomed            = wlUser32.NewProc("IsZoomed")
 )
 
 const (
@@ -310,9 +311,23 @@ func (a *App) ArrangeWindowForGame() map[string]any {
 	if naviHwnd == 0 {
 		return map[string]any{"ok": false, "reason": "navi-window-not-found"}
 	}
+	// 移动前先记下原始 placement（位置/大小/最大化状态），游戏退出时还原。
+	var before wlWindowPlacement
+	before.Length = uint32(unsafe.Sizeof(before))
+	savedOK := false
+	if r, _, _ := wlGetWindowPlacement.Call(naviHwnd, uintptr(unsafe.Pointer(&before))); r != 0 {
+		savedOK = true
+	}
 	if !wlMoveMaximize(naviHwnd, target.Info.Work) {
 		return map[string]any{"ok": false, "reason": "move-failed"}
 	}
+	a.mu.Lock()
+	if !a.windowSaved && savedOK {
+		a.savedPlacement = before
+		a.windowSaved = true
+	}
+	a.moveTargetHandle = target.Handle
+	a.mu.Unlock()
 	var gameInfo wlMonitor
 	for _, m := range monitors {
 		if m.Handle == gameMon {
@@ -329,5 +344,37 @@ func (a *App) ArrangeWindowForGame() map[string]any {
 		"monitors": len(monitors),
 		"target":   target.Info.Monitor,
 		"targetId": target.Name,
+	}
+}
+
+// restoreNaviWindowIfNeeded 游戏退出时还原自动移屏前的窗口位置/大小/最大化状态。
+// 只还原"仍在目标副屏上、仍处于最大化"的窗口；用户手动动过窗口就不还原。
+func (a *App) restoreNaviWindowIfNeeded() {
+	a.mu.Lock()
+	if !a.windowSaved {
+		a.mu.Unlock()
+		return
+	}
+	wp := a.savedPlacement
+	target := a.moveTargetHandle
+	a.windowSaved = false
+	a.moveTargetHandle = 0
+	a.mu.Unlock()
+
+	hwnd := wlFindTopWindow(uint32(os.Getpid()))
+	if hwnd == 0 {
+		return
+	}
+	if r, _, _ := wlIsZoomed.Call(hwnd); r == 0 {
+		return
+	}
+	if target != 0 {
+		mon, _, _ := wlMonitorFromWindow.Call(hwnd, monitorDefaultToNearest)
+		if mon != target {
+			return
+		}
+	}
+	if r, _, _ := wlSetWindowPlacement.Call(hwnd, uintptr(unsafe.Pointer(&wp))); r != 0 {
+		a.guiLog("窗口联动：游戏退出，TOTKnavi 已还原到自动移屏前的位置")
 	}
 }

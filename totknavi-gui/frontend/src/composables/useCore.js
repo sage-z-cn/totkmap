@@ -616,6 +616,8 @@ watch(gameRunning, (val, old) => {
     userTabOverride.value = false
   } else if (!val && old) {
     activeTab.value = 'control'
+    // Go 侧会还原自动移屏前的窗口状态，稍后同步最大化图标
+    setTimeout(syncWindowMaximised, 400)
   }
 })
 export async function initCore() {
