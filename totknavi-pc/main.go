@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -30,6 +31,9 @@ func main() {
 		fullScan   bool
 		watchMode  bool
 		findMode   bool
+		probeMode  bool
+		sampleArg  string
+		sampleSec  = 10
 		gapSec     = 3
 		port       = 8766
 		appRoot    string
@@ -74,6 +78,20 @@ func main() {
 			// 兼容 totknavi-gui 传入的 --emu 参数
 		case "--find":
 			findMode = true
+		case "--probe":
+			probeMode = true
+		case "--sample":
+			if i+1 < len(args) {
+				sampleArg = args[i+1]
+				i++
+			}
+		case "--seconds":
+			if i+1 < len(args) {
+				if n, err := strconv.Atoi(args[i+1]); err == nil && n > 0 {
+					sampleSec = n
+				}
+				i++
+			}
 		case "--log":
 			if i+1 < len(args) {
 				logPath = args[i+1]
@@ -194,6 +212,24 @@ func main() {
 		} else {
 			fmt.Println("  [锚] 未读到存档锚点 → 将全范围扫描（候选较多，建议用 --coords 指定 HUD 坐标）")
 		}
+	}
+
+	if probeMode {
+		probeChain(p, plat, anchor)
+		return
+	}
+
+	if sampleArg != "" {
+		var addrs []uintptr
+		for _, s := range strings.Split(sampleArg, ",") {
+			s = strings.TrimSpace(s)
+			s = strings.TrimPrefix(strings.TrimPrefix(s, "0x"), "0X")
+			if v, err := strconv.ParseUint(s, 16, 64); err == nil {
+				addrs = append(addrs, uintptr(v))
+			}
+		}
+		sampleAddrs(p, addrs, sampleSec)
+		return
 	}
 
 	if findMode {

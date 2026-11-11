@@ -15,6 +15,7 @@ package main
 import (
 	"encoding/binary"
 	"math"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -23,7 +24,7 @@ import (
 const (
 	ptkRecStride       = 0x40 // 四元数刚体槽步长
 	ptkRotRecStride    = 0x48
-	ptkRing28Stride    = 28   // PC版专属：12B 坐标 + 16B 单位四元数 RingBuffer // TOTK 跨场景持久 3x4 旋转矩阵+坐标双缓冲槽步长
+	ptkRing28Stride    = 28 // PC版专属：12B 坐标 + 16B 单位四元数 RingBuffer // TOTK 跨场景持久 3x4 旋转矩阵+坐标双缓冲槽步长
 	ptkQuatWindowBytes = 0x0C + 16
 
 	// ptkHitCap 候选总量硬上限（防病态内存下无限累积撑爆进程）。
@@ -237,8 +238,21 @@ type staticPtrChain struct {
 	structOffset uintptr
 }
 
-// 已知在主模块 .bss 段中恒定指向活跃林克实体的全局指针链（实机验证跨重启有效）
+// 已知在主模块 .bss 段中恒定指向活跃林克实体的全局指针链。
+//
+// 分两组，运行时逐个校验坐标合法性，越界/读空/坐标非法会自动跳过：
+//   - 第一组：Recomp 0.3.13 + 游戏 1.4.3 实机标定（主模块 0x3adf000，57.5MB）。
+//     2026-11-12 实测：三条链都指向同一份活坐标，跟随角色连续刷新。
+//   - 第二组：旧构建（主模块 0x472b000）遗留偏移。新构建里因模块收缩已越界，
+//     保留仅为兼容旧 Recomp 版本。
 var knownStaticChains = []staticPtrChain{
+	// Recomp 0.3.13 / 主模块 0x3adf000：玩家对象基址 0x3ADA4E0/0x3ADA4E8，坐标 +0x534
+	{0x3ADA4E0, 0x534},
+	{0x3ADA4E8, 0x534},
+	// 同一坐标的其他引用路径（多副本兜底）
+	{0x3AD9918, 0x3E4},
+	{0x3AD9738, 0x454},
+	// 旧构建（主模块 0x472b000）
 	{0x4726008, 0x10},
 	{0x4727978, 0x60},
 	{0x4723FF8, 0xA0},
@@ -249,7 +263,7 @@ var knownStaticChains = []staticPtrChain{
 // ptkReadStaticChain PC 重编译版主路径：通过主模块固定基址 0x7000000000 处的静态指针表
 // 直读林克真实坐标，零全内存扫描，无需存档锚点，开局秒锁。
 func ptkReadStaticChain(h uintptr, mainBase uintptr) (pos [3]float32, targetAddr uintptr, ok bool) {
-	if mainBase == 0 {
+	if mainBase == 0 || os.Getenv("TOTKNAVI_NO_CHAIN") != "" {
 		return pos, 0, false
 	}
 	for _, chain := range knownStaticChains {
@@ -356,7 +370,6 @@ func ptkFindEdenTriples(buf []byte, base uintptr, anchor *[3]float32, radius flo
 		if anchor != nil && radius > 0 && d > radius {
 			continue
 		}
-
 
 		// ① ★ PC 版 28 字节物理运动 RingBuffer 队列：
 		//    Run >= 4 帧（全内存唯一林克物理队列）赋予持久 Rot 顶级特权；
