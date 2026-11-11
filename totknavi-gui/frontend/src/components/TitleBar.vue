@@ -24,7 +24,7 @@
       <span class="w-px h-3.5 bg-slate-700/70 mx-0.5"></span>
 
       <button class="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700/60 text-[13px] leading-none transition" :title="t('header.minimize')" @click="minWin">—</button>
-      <button class="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700/60 text-[12px] leading-none transition" :title="maximised ? t('header.restore') : t('header.maximize')" @click="toggleMax">{{ maximised ? '❐' : '⛶' }}</button>
+      <button class="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-700/60 text-[12px] leading-none transition" :title="windowMaximised ? t('header.restore') : t('header.maximize')" @click="toggleMax">{{ windowMaximised ? '❐' : '⛶' }}</button>
       <button class="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 text-[12px] leading-none transition" :title="t('header.close')" @click="closeWin">✕</button>
     </div>
   </header>
@@ -35,23 +35,18 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SettingsPop from './SettingsPop.vue'
 import AboutPop from './AboutPop.vue'
-import { rt, ver, syncDot, syncText, syncClass } from '../composables/useCore'
+import { rt, ver, syncDot, syncText, syncClass, windowMaximised, syncWindowMaximised } from '../composables/useCore'
 
 const { t } = useI18n()
 
 // ---- 窗口控制 ----
-// 注意：runtime 的 WindowIsMaximised() 返回 Promise，必须 await，否则永远拿到真值
-const maximised = ref(false)
-async function syncMax() {
-  if (!rt.WindowIsMaximised) return
-  try { maximised.value = !!(await rt.WindowIsMaximised()) } catch { /* runtime 未就绪时保持原图标 */ }
-}
+// 最大化状态放在 useCore：定位后自动移屏/最大化时 TitleBar 也要同步图标
 async function toggleMax() {
-  const prev = maximised.value
+  const prev = windowMaximised.value
   rt.WindowToggleMaximise()
-  if (!rt.WindowIsMaximised) { maximised.value = !prev; return }
-  await syncMax()
-  setTimeout(syncMax, 150) // 少数情况下窗口状态落定略晚，再对一次图标
+  if (!rt.WindowIsMaximised) { windowMaximised.value = !prev; return }
+  await syncWindowMaximised()
+  setTimeout(syncWindowMaximised, 150) // 少数情况下窗口状态落定略晚，再对一次图标
 }
 function minWin() { rt.WindowMinimise() }
 // Wails 无边框(Frameless)下 WindowClose() 不触发关闭，改用 Quit() 强制退出
@@ -74,7 +69,7 @@ function closePops() {
 }
 
 onMounted(() => {
-  syncMax()
+  syncWindowMaximised()
   document.addEventListener('click', closePops)
 })
 onUnmounted(() => document.removeEventListener('click', closePops))

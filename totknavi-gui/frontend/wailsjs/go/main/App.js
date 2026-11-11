@@ -6,6 +6,10 @@ export function ApplySavePath(arg1) {
   return window['go']['main']['App']['ApplySavePath'](arg1);
 }
 
+export function ArrangeWindowForGame() {
+  return window['go']['main']['App']['ArrangeWindowForGame']();
+}
+
 export function CheckForUpdates() {
   return window['go']['main']['App']['CheckForUpdates']();
 }
@@ -36,6 +40,10 @@ export function GameExe() {
 
 export function LaunchGame() {
   return window['go']['main']['App']['LaunchGame']();
+}
+
+export function ListMonitors() {
+  return window['go']['main']['App']['ListMonitors']();
 }
 
 export function LoadConfig() {

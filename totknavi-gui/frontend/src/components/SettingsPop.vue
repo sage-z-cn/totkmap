@@ -50,6 +50,20 @@
         <input v-model="cfg.autoSwitchToMap" type="checkbox" class="accent-blue-600 w-3.5 h-3.5" />
         <span class="text-slate-300">{{ t('settings.autoSwitchToMap') }}</span>
       </label>
+      <label class="flex items-center gap-2 cursor-pointer select-none py-1">
+        <input v-model="cfg.autoMoveToSecondary" type="checkbox" class="accent-blue-600 w-3.5 h-3.5" />
+        <span class="text-slate-300">{{ t('settings.autoMoveToSecondary') }}</span>
+      </label>
+      <div v-if="cfg.autoMoveToSecondary && monitors.length > 1" class="pl-5 pt-0.5">
+        <label class="block text-slate-400 mb-1">{{ t('settings.autoMoveTarget') }}</label>
+        <select v-model="cfg.autoMoveTarget" class="w-full bg-[#0d1117] border border-slate-700 rounded px-2 py-1.5 text-[11px] text-slate-200 focus:border-blue-500 focus:outline-none">
+          <option value="">{{ t('settings.autoMoveTargetAuto') }}</option>
+          <option v-for="m in monitors" :key="m.id" :value="m.id">
+            {{ m.name }} · {{ m.width }}×{{ m.height }}{{ m.primary ? ' · ' + t('settings.primaryMonitor') : '' }}
+          </option>
+        </select>
+        <div class="text-[10px] text-slate-600 mt-1 leading-relaxed">{{ t('settings.autoMoveTargetHint') }}</div>
+      </div>
     </div>
     <!-- 界面语言（跟随系统 / 中文 / English，即时切换） -->
     <LangSelect />
@@ -61,12 +75,13 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import LangSelect from './LangSelect.vue'
-import { cfg, envDetect, pickSave, saveSettings, openLogDir, pickGameExe, gameExeOk } from '../composables/useCore'
+import { cfg, envDetect, pickSave, saveSettings, openLogDir, pickGameExe, gameExeOk, monitors, loadMonitors } from '../composables/useCore'
 
 const { t } = useI18n()
+onMounted(loadMonitors)
 
 const savedMsg = ref('')
 const savedMsgClass = ref('text-emerald-400')

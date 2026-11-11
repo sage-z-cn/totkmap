@@ -7,6 +7,8 @@ export namespace main {
 	    tls?: boolean;
 	    autoOpenMap?: boolean;
 	    autoSwitchToMap?: boolean;
+	    autoMoveToSecondary?: boolean;
+	    autoMoveTarget?: string;
 	    autoStartOnGame?: boolean;
 	    gameExe?: string;
 	
@@ -22,6 +24,8 @@ export namespace main {
 	        this.tls = source["tls"];
 	        this.autoOpenMap = source["autoOpenMap"];
 	        this.autoSwitchToMap = source["autoSwitchToMap"];
+	        this.autoMoveToSecondary = source["autoMoveToSecondary"];
+	        this.autoMoveTarget = source["autoMoveTarget"];
 	        this.autoStartOnGame = source["autoStartOnGame"];
 	        this.gameExe = source["gameExe"];
 	    }

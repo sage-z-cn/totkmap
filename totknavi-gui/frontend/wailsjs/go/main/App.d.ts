@@ -4,6 +4,8 @@ import {main} from '../models';
 
 export function ApplySavePath(arg1:string):Promise<string>;
 
+export function ArrangeWindowForGame():Promise<Record<string, any>>;
+
 export function CheckForUpdates():Promise<Record<string, string>>;
 
 export function ClearTarget():Promise<string>;
@@ -19,6 +21,8 @@ export function ExportDiagnostics():Promise<string>;
 export function GameExe():Promise<Record<string, any>>;
 
 export function LaunchGame():Promise<Record<string, any>>;
+
+export function ListMonitors():Promise<Array<Record<string, any>>>;
 
 export function LoadConfig():Promise<main.Config>;
 

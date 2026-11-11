@@ -31,6 +31,22 @@ export const hasOfflineMap = ref(false)
 export const webOK = ref(true)
 // 游戏路径是否可用（Go 侧探测/配置）；启动按钮据此决定是否先弹选择框
 export const gameExeOk = ref(false)
+// 显示器列表（设置里的“目标副屏”下拉框）
+export const monitors = ref([])
+export async function loadMonitors() {
+  try {
+    const r = await api.ListMonitors()
+    monitors.value = Array.isArray(r) ? r : []
+  } catch {
+    monitors.value = []
+  }
+}
+// 窗口是否最大化（TitleBar 与“定位后自动移屏”共用）
+export const windowMaximised = ref(false)
+export async function syncWindowMaximised() {
+  if (!rt.WindowIsMaximised) return
+  try { windowMaximised.value = !!(await rt.WindowIsMaximised()) } catch { /* runtime 未就绪 */ }
+}
 
 // ---- 头部状态灯 ----
 // syncText/syncDot 由 computed 驱动（含语言切换实时刷新，不再靠 updateSync 赋值）
@@ -63,7 +79,7 @@ export const target = ref(null)
 export const progressData = ref({})
 
 // ---- 配置 / 环境 ----
-export const cfg = reactive({ saveDirRyujinx: '', saveDirEden: '', emu: 'auto', tls: false, autoOpenMap: true, autoSwitchToMap: true, autoStartOnGame: true, gameExe: '' })
+export const cfg = reactive({ saveDirRyujinx: '', saveDirEden: '', emu: 'auto', tls: false, autoOpenMap: true, autoSwitchToMap: true, autoStartOnGame: true, autoMoveToSecondary: true, autoMoveTarget: '', gameExe: '' })
 export const envDetect = reactive({ save: false, saveRyu: false, saveEden: false })
 export const statusMapUrl = ref('')
 
@@ -101,8 +117,9 @@ export const locating = computed(() => coreRunning.value && !pos.ok)
 export const activeTab = ref('control')
 // 用户手动点过 Tab 后不再自动抢焦点（本局游戏内一直有效）
 export const userTabOverride = ref(false)
-// 本局游戏是否已经自动切过一次地图页
+// 本局游戏是否已经自动切过一次地图页 / 自动移过窗口
 let autoSwitched = false
+let autoMoved = false
 export function setTab(tab) {
   if (tab !== 'control' && tab !== 'map') return
   activeTab.value = tab
@@ -468,7 +485,7 @@ export function coordsErrorText(r) {
   return t('cal.missDefault')
 }
 export async function saveSettings() {
-  await api.SaveConfig({ saveDirRyujinx: cfg.saveDirRyujinx, saveDirEden: cfg.saveDirEden, emu: cfg.emu, tls: cfg.tls, autoOpenMap: cfg.autoOpenMap !== false, autoSwitchToMap: cfg.autoSwitchToMap !== false, autoStartOnGame: cfg.autoStartOnGame !== false, gameExe: cfg.gameExe })
+  await api.SaveConfig({ saveDirRyujinx: cfg.saveDirRyujinx, saveDirEden: cfg.saveDirEden, emu: cfg.emu, tls: cfg.tls, autoOpenMap: cfg.autoOpenMap !== false, autoSwitchToMap: cfg.autoSwitchToMap !== false, autoStartOnGame: cfg.autoStartOnGame !== false, autoMoveToSecondary: cfg.autoMoveToSecondary !== false, autoMoveTarget: cfg.autoMoveTarget, gameExe: cfg.gameExe })
   await detectSave()
 }
 export async function pickSaveFile() {
@@ -574,15 +591,28 @@ function applyStatus(st) {
 // 中途重锁不会把正在看控制台的用户反复弹到地图。
 watch(locked, (val, old) => {
   if (!val || old) return
-  if (cfg.autoSwitchToMap === false || userTabOverride.value || autoSwitched) return
-  autoSwitched = true
-  activeTab.value = 'map'
+  // 自动切地图页（可被用户手动选 Tab / 设置关闭）
+  if (cfg.autoSwitchToMap !== false && !userTabOverride.value && !autoSwitched) {
+    autoSwitched = true
+    activeTab.value = 'map'
+  }
+  // 自动移到游戏所在屏之外的屏幕并最大化（独立设置，不受 Tab 影响）
+  if (cfg.autoMoveToSecondary !== false && !autoMoved) {
+    autoMoved = true
+    setTimeout(async () => {
+      try {
+        const r = await api.ArrangeWindowForGame()
+        if (r && r.moved) await syncWindowMaximised()
+      } catch { /* 移屏失败不影响定位 */ }
+    }, 250)
+  }
 })
 // 游戏进程重新拉起 = 新的一局：清掉上一局的 Tab 记录，本局允许再次自动切页；
 // 游戏退出 = 回到控制台，避免地图页停在"游戏未运行"的遮罩上。
 watch(gameRunning, (val, old) => {
   if (val && !old) {
     autoSwitched = false
+    autoMoved = false
     userTabOverride.value = false
   } else if (!val && old) {
     activeTab.value = 'control'
@@ -590,6 +620,7 @@ watch(gameRunning, (val, old) => {
 })
 export async function initCore() {
   autoSwitched = false
+  autoMoved = false
   userTabOverride.value = false
   activeTab.value = 'control'
   mapRefreshTick.value = Date.now()
@@ -603,9 +634,12 @@ export async function initCore() {
   cfg.tls = !!c.tls
   if (c.autoOpenMap !== undefined) cfg.autoOpenMap = !!c.autoOpenMap
   if (c.autoSwitchToMap !== undefined) cfg.autoSwitchToMap = !!c.autoSwitchToMap
+  if (c.autoMoveToSecondary !== undefined) cfg.autoMoveToSecondary = !!c.autoMoveToSecondary
+  if (c.autoMoveTarget) cfg.autoMoveTarget = c.autoMoveTarget
   if (c.autoStartOnGame !== undefined) cfg.autoStartOnGame = !!c.autoStartOnGame
   if (c.gameExe) cfg.gameExe = c.gameExe
   await detectGameExe()
+  await loadMonitors()
   const det = await api.EnvDetect()
   envDetect.save = !!det.save
   envDetect.saveRyu = !!det.saveRyu

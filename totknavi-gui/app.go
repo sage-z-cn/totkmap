@@ -91,6 +91,10 @@ type Config struct {
 	// AutoSwitchToMap 定位成功后自动切到内嵌地图页（默认 true）。
 	// 与旧 autoOpenMap 分开：旧字段控制"另开系统浏览器"，沿用旧 false 会误伤新行为。
 	AutoSwitchToMap *bool `json:"autoSwitchToMap,omitempty"`
+	// AutoMoveToSecondary 定位成功后把窗口移到游戏所在屏之外的屏幕并最大化（默认 true）。
+	AutoMoveToSecondary *bool `json:"autoMoveToSecondary,omitempty"`
+	// AutoMoveTarget 目标显示器设备名（如 \\.\DISPLAY2）；空或 auto 时自动选择。
+	AutoMoveTarget string `json:"autoMoveTarget,omitempty"`
 
 	// AutoStartOnGame 检测到游戏启动时自动拉起核心（默认 true）。
 	AutoStartOnGame *bool `json:"autoStartOnGame,omitempty"`
@@ -122,6 +126,10 @@ func (a *App) loadConfig() *Config {
 	if cfg.AutoSwitchToMap == nil {
 		t := true
 		cfg.AutoSwitchToMap = &t
+	}
+	if cfg.AutoMoveToSecondary == nil {
+		t := true
+		cfg.AutoMoveToSecondary = &t
 	}
 	if cfg.AutoStartOnGame == nil {
 		t := true
