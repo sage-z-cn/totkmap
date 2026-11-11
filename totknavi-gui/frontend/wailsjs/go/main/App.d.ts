@@ -16,6 +16,10 @@ export function EnvDetect():Promise<Record<string, any>>;
 
 export function ExportDiagnostics():Promise<string>;
 
+export function GameExe():Promise<Record<string, any>>;
+
+export function LaunchGame():Promise<Record<string, any>>;
+
 export function LoadConfig():Promise<main.Config>;
 
 export function OpenLogDir():Promise<string>;
@@ -23,6 +27,8 @@ export function OpenLogDir():Promise<string>;
 export function OpenSaveDir():Promise<string>;
 
 export function PickDir(arg1:string):Promise<string>;
+
+export function PickGameExe():Promise<string>;
 
 export function PickSaveFile():Promise<string>;
 

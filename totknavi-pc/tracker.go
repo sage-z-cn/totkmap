@@ -5,10 +5,13 @@
 //	① 存档锚点窄窗扫描：120m → 400m → 3000m 逐级放宽，扫到就锁
 //	② 移动确认：锁定后，该槽坐标相对锁定时刻位移 0.5~150m → 判定真身（verified）
 //	   若主锁没动而候选里有动的，走动仲裁切过去（防锁到静止 NPC）
-//	③ 死守不退：锁定后读不到就重试 3 次（30ms），仍失败则 hold 上一帧，绝不主动掉锁
+//	③ 死守不退：锁定后读不到就重试 3 次（30ms），仍失败则 hold 上一帧；
+//	   连续 3s 读空才判定地址失效，重置锁定重新探测
+//	④ 延迟重试锁定：未锁定时每 2s 重新探测一次（自动启动常在主菜单/加载界面，
+//	   扫不到真身；进入 3D 世界后自动锁定）
 //
 // 明确不做（之前加过，已删）：副本池、动态锚点、三级分级扫描、定期重扫。
-// 依据：totknavi 没有这些，靠上面三条已经稳定；多出来的逻辑只会引入新的失败模式。
+// 依据：totknavi 没有这些，靠上面几条已经稳定；多出来的逻辑只会引入新的失败模式。
 
 package main
 
@@ -75,6 +78,12 @@ const (
 	scanRadius3 = 3000.0
 
 	maxCands = 10 // 候选上限（移动确认用）
+
+	// 延迟重试锁定：未锁定时每 2s 重新探测一次（自动启动时多在主菜单/加载界面）
+	lockRetryGap = 2 * time.Second
+
+	// 读空自愈：连续读不到角色数据 30 拍（约 3s）判定地址失效，重置锁定重新探测
+	lostSelfHealTicks = 30
 )
 
 // dist2DHud HUD 序下的水平距离 (X, Y)
@@ -193,6 +202,11 @@ func runTracker(p Platform, plat *totkpcPlatform, anchor *[3]float32, addr uintp
 	oscCount := 0
 
 	usingStaticChain := false
+	// 延迟重试锁定：自动启动常发生在主菜单/加载界面，那时扫不到真身只能 hold。
+	// lockedAddr == 0 时每 lockRetryGap 重新探测一次，进入 3D 世界后自动锁定。
+	var lastLockTry time.Time
+	lockFailLogged := false
+	var lastChainProbe time.Time
 	var mainBase uintptr
 	if plat != nil {
 		mainBase = plat.MainBase()
@@ -313,6 +327,69 @@ func runTracker(p Platform, plat *totkpcPlatform, anchor *[3]float32, addr uintp
 				onTick([3]float32{}, 0, false, false, "disconnected")
 				return
 			}
+			// 未锁定：每 2s 尝试一次重新锁定（主菜单/加载界面扫不到，进入 3D 世界后才能命中）。
+			// 绝不每拍都扫——全范围扫描很贵。
+			if lockedAddr == 0 {
+				if time.Since(lastLockTry) < lockRetryGap {
+					continue
+				}
+				lastLockTry = time.Now()
+				if sPos, sAddr, sOk := ptkReadStaticChain(h, mainBase); sOk {
+					lockedAddr = sAddr
+					verified = true
+					usingStaticChain = true
+					pstate.setGameStatus(true, p.PID(), lockedAddr)
+					pstate.bumpLock()
+					logEvent("  [lock] ★ [LEVEL-1 静态直读] 延迟重试命中主模块静态真身指针链 0x%X，自动锁定 (%.1f, %.1f, %.1f)",
+						lockedAddr, sPos[0], sPos[1], sPos[2])
+				} else if newAddr, newCands, ok := scanForPlayer(p, plat, anchor); ok {
+					lockedAddr = newAddr
+					cands = newCands
+					usingStaticChain = false
+					verified = len(newCands) > 0 && newCands[0].Rot
+					pstate.setGameStatus(true, p.PID(), lockedAddr)
+					pstate.bumpLock()
+					hp := [3]float32{}
+					if len(newCands) > 0 {
+						hp = hudOf(newCands[0])
+					}
+					logEvent("  [lock] ★ [LEVEL-2 扫描降级] 延迟重试扫描锁定 0x%X 坐标 (%.1f, %.1f, %.1f)，verified=%v",
+						lockedAddr, hp[0], hp[1], hp[2], verified)
+				} else {
+					if !lockFailLogged {
+						lockFailLogged = true
+						logEvent("  [lock] 延迟重试未命中（可能仍在标题/加载界面），每 2s 继续探测...")
+					}
+					onTick([3]float32{}, 0, false, false, "no-anchor")
+					continue
+				}
+				lockFailLogged = false
+				moveN = 0
+				lostTicks = 0
+				oscCount = 0
+				hasPrev = false
+				continue
+			}
+			// 已锁定但仍在 L2：静态链可用时无条件升阶。开局在主菜单时 L2 可能先锁到静态副本，
+			// 进入 3D 世界后静态链才可用；不能只在"当前位置与链接近"时才升阶。
+			if !usingStaticChain && time.Since(lastChainProbe) >= lockRetryGap {
+				lastChainProbe = time.Now()
+				if sPos, sAddr, sOk := ptkReadStaticChain(h, mainBase); sOk {
+					lockedAddr = sAddr
+					verified = true
+					usingStaticChain = true
+					cands = nil
+					moveN = 0
+					lostTicks = 0
+					oscCount = 0
+					hasPrev = false
+					pstate.setGameStatus(true, p.PID(), lockedAddr)
+					pstate.bumpLock()
+					logEvent("  [upgrade] ★ 静态链已可用，从 L2 升阶至 [LEVEL-1 静态直读] 0x%X (%.1f, %.1f, %.1f)",
+						sAddr, sPos[0], sPos[1], sPos[2])
+					continue
+				}
+			}
 			var pos [3]float32
 			var ok bool
 			if usingStaticChain {
@@ -342,6 +419,20 @@ func runTracker(p Platform, plat *totkpcPlatform, anchor *[3]float32, addr uintp
 				if shrineMode {
 					// 庙内过图/黑屏：保持神庙入口
 					onTick(shrineEntrance, 0, false, true, "shrine")
+					continue
+				}
+				// 读空自愈：过图/加载 3s 阈值足够，超过说明地址已失效（换图后槽位重排），
+				// 重置锁定并回到延迟重试路径重新探测。不主动掉锁的死守原则只针对瞬态读空。
+				if lostTicks >= lostSelfHealTicks {
+					logEvent("  [hold] 连续 3s 读不到角色数据，重置锁定并重新探测...")
+					lockedAddr = 0
+					usingStaticChain = false
+					verified = false
+					cands = nil
+					hasPrev = false
+					moveN = 0
+					lostTicks = 0
+					oscCount = 0
 					continue
 				}
 				if lostTicks == 1 {

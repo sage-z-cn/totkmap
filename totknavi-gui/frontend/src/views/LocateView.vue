@@ -1,64 +1,18 @@
 <template>
-  <div class="flex-1 flex flex-col gap-3 min-h-0 p-3 overflow-y-auto">
+  <div class="flex-1 flex flex-col gap-2.5 min-h-0 p-3 overflow-y-auto">
 
-    <!-- ① 自绘标题栏：整栏拖拽 + 设置/窗口控制 -->
-    <section class="bg-[#161b22] border-b border-slate-800 px-3 py-2.5 shrink-0 flex items-center gap-5" style="--wails-draggable:drag;">
-      <div class="flex items-center gap-2.5 shrink-0">
-        <span class="w-2.5 h-2.5 rounded-full" :class="syncDot"></span>
-        <span class="text-white text-sm font-bold tracking-wide">{{ t('title.main') }}</span>
-        <span v-if="ver" class="text-[10px] font-mono text-sky-300 bg-blue-500/10 border border-blue-500/40 rounded px-1.5 py-0.5">v{{ ver.replace('v','') }}</span>
-        <span class="text-[11px] text-slate-500 ml-1.5 pl-2.5 border-l border-slate-800">{{ emuLabel }} ➔ totk.yalin.site</span>
-      </div>
-      <div class="flex items-center gap-1 ml-auto shrink-0" style="--wails-draggable:no-drag;">
-        <span class="text-[11px] font-mono mr-2" :class="syncClass">{{ syncText }}</span>
-        <!-- 设置卡片（点击齿轮弹出，与关于互斥） -->
-        <div class="relative" @click.stop>
-          <button class="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white rounded hover:bg-slate-700/60" :title="t('header.settings')" @click="toggleSettings">⚙</button>
-          <SettingsPop v-if="showSettingsPop" class="absolute right-0 top-full mt-1.5 z-50" />
+    <!-- 紧凑步骤条：圆点 + 文字，无卡片背景（高度 22px） -->
+    <div class="flex items-center gap-1.5 text-[11px] font-mono shrink-0 h-[22px] px-0.5 whitespace-nowrap overflow-hidden">
+      <template v-for="(s, i) in steps" :key="s.key">
+        <div v-if="i > 0" class="text-slate-700 mx-0.5">›</div>
+        <div class="flex items-center gap-1.5" :class="stepClass(s.state)">
+          <span class="w-1.5 h-1.5 rounded-full" :class="stepDot(s.state)"></span>
+          <span>{{ t(`steps.${s.key}`) }}</span>
         </div>
-        <!-- 关于卡片（点击问号弹出，与设置互斥） -->
-        <div class="relative" @click.stop>
-          <button class="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white rounded hover:bg-slate-700/60 text-[15px] font-semibold" :title="t('header.about')" @click="toggleAbout">?</button>
-          <AboutPop v-if="showAboutPop" class="absolute right-0 top-full mt-1.5 z-50" />
-        </div>
-        <button class="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white rounded hover:bg-slate-700/60 text-sm leading-none" :title="t('header.minimize')" @click="minWin">—</button>
-        <button class="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-rose-400 rounded hover:bg-slate-700/60 text-sm leading-none" :title="t('header.close')" @click="closeWin">✕</button>
-      </div>
-    </section>
+      </template>
+    </div>
 
-    <!-- ② 主操作横幅：步骤状态机 | 打开地图 + 定位 -->
-    <section class="bg-[#161b22] border border-slate-800 rounded-lg px-3.5 py-2.5 shrink-0 flex items-center justify-between gap-4">
-      <div class="flex items-center gap-2 text-xs font-mono shrink-0 whitespace-nowrap">
-        <template v-for="(s, i) in steps" :key="s.key">
-          <div v-if="i > 0" class="text-slate-600 mx-0.5">/</div>
-          <div class="flex items-center gap-1.5" :class="stepClass(s.state)">
-            <span class="w-2 h-2 rounded-full" :class="stepDot(s.state)"></span>
-            <span>{{ t(`steps.${s.key}`) }}</span>
-          </div>
-        </template>
-      </div>
-      <div class="flex items-center gap-2.5 shrink-0">
-        <select v-model="cfg.emu" @change="onEmuChange" :title="t('emu.pickTitle')"
-          class="bg-[#0d1117] border border-slate-700 rounded-lg px-2 py-2 text-xs font-medium text-slate-300 hover:border-slate-500 focus:outline-none transition">
-          <option value="auto">{{ t('emu.auto') }}</option>
-          <option value="ryujinx">{{ t('emu.ryujinx') }}</option>
-          <option value="eden">{{ t('emu.eden') }}</option>
-        </select>
-        <button @click="openMap" class="w-[136px] py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs font-medium border border-slate-700 flex items-center justify-center gap-1.5 transition">
-          🧭 {{ t('buttons.openMap') }}
-        </button>
-        <button @click="toggleLocating"
-          :class="isLocating
-            ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/50'
-            : 'bg-blue-600 hover:bg-blue-500 shadow-blue-950/50'"
-          class="w-[136px] py-2 rounded-lg text-white text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-lg active:scale-95">
-          <span>{{ isLocating ? '◉' : '▶' }}</span>
-          <span>{{ isLocating ? t('buttons.locating') : t('buttons.start') }}</span>
-        </button>
-      </div>
-    </section>
-
-    <!-- ③ 两列：左4 实时数据 ｜ 右6 本地解析进度 -->
+    <!-- ② 两列：左4 实时数据 ｜ 右6 本地解析进度 -->
     <div class="grid grid-cols-10 gap-3 items-stretch shrink-0">
 
       <!-- 左 4 列 -->
@@ -189,10 +143,10 @@
       </div>
     </div>
 
-    <!-- ④ 实时日志 -->
+    <!-- ③ 实时日志 -->
     <LogPanel />
 
-    <!-- ⑤ 坐标校准预检弹窗（v2.1.2 B-1：>50m 警告，可强制继续） -->
+    <!-- ④ 坐标校准预检弹窗（v2.1.2 B-1：>50m 警告，可强制继续） -->
     <div v-if="showPrecheck && precheckData" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50" style="--wails-draggable:no-drag;" @click.self="showPrecheck = false">
       <div class="bg-[#161b22] border border-amber-500/50 rounded-xl p-4 shadow-2xl text-xs space-y-3 w-[400px]">
         <div class="text-[11px] font-semibold text-amber-400 uppercase tracking-wider">{{ t('precheck.title') }}</div>
@@ -216,38 +170,20 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import LogPanel from '../components/LogPanel.vue'
-import SettingsPop from '../components/SettingsPop.vue'
-import AboutPop from '../components/AboutPop.vue'
 import { findRegion } from '../data/regions'
 import { PROGRESS_CATEGORY_KEYS, progressLabel } from '../data/progressCategories'
 import {
-  pos, steps, stepClass, stepDot, isLocating, toggleLocating, progressData,
-  layerName, sourceLabel, openMap, logs,
-  ver, syncText, syncClass, syncDot, rt, submitCoords, coordsState, cfg, saveSettings,
-  coordsErrorText, saveTimeAgoText, saveTimeAgoClass, detectSave,
+  pos, steps, stepClass, stepDot, progressData,
+  layerName, sourceLabel, logs,
+  submitCoords, coordsState,
+  coordsErrorText, saveTimeAgoText, saveTimeAgoClass,
   pickSaveFile, pickSaveDir, doOpenSave, resetSaveDetection
 } from '../composables/useCore'
 
 const { t } = useI18n()
-
-function minWin() { rt.WindowMinimise() }
-// Wails 无边框(Frameless)下 WindowClose() 不触发关闭，改用 Quit() 强制退出
-function closeWin() { rt.Quit() }
-
-// 模拟器选择（V2.0.0）：改动即保存；core 运行中则提示需重启定位生效
-const emuLabel = computed(() => {
-  const e = cfg.emu || 'auto'
-  return ['auto', 'ryujinx', 'eden'].includes(e) ? t(`emu.${e}`) : e
-})
-async function onEmuChange() {
-  await saveSettings()
-  if (isLocating.value) {
-    logs.value.push({ time: new Date().toTimeString().slice(0, 8), text: t('emuSwitch'), level: 'warn', color: 'text-amber-400', levelColor: 'text-amber-500' })
-  }
-}
 
 // 全量 21 类（与 core progressCounts 对齐）：key 是 core 中文类名（数据层），
 // label 走 i18n（英文界面显示官方英文译名，见 data/progressCategories.js）
@@ -265,8 +201,6 @@ const progressCount = computed(() => {
   const counts = progressData.value?.counts
   return counts ? Object.keys(counts).filter(k => counts[k] && counts[k].total).length : 0
 })
-
-
 
 const resetSuccess = ref(false)
 async function doResetDetection() {
@@ -342,24 +276,6 @@ async function realSubmit(x, y, z) {
     }
   }, 1000)
 }
-
-// 设置/关于卡片：互斥显示（同时只弹一个），点击外部全部关闭
-const showSettingsPop = ref(false)
-const showAboutPop = ref(false)
-function toggleSettings() {
-  showAboutPop.value = false
-  showSettingsPop.value = !showSettingsPop.value
-}
-function toggleAbout() {
-  showSettingsPop.value = false
-  showAboutPop.value = !showAboutPop.value
-}
-function closePops() {
-  showSettingsPop.value = false
-  showAboutPop.value = false
-}
-onMounted(() => document.addEventListener('click', closePops))
-onUnmounted(() => document.removeEventListener('click', closePops))
 
 // 所在图层行：地面层显示地区名（TOTKmap areas.js 最近区域匹配），地下/天空仅层名
 const regionText = computed(() => {

@@ -18,8 +18,19 @@ export { api, rt }
 // 两处各写一份必然漂移（历史遗留：此处曾写死 v1.2.0）。
 export const ver = ref('')
 export const coreRunning = ref(false)
-export const isLocating = ref(false)
+// 定位中 = core 在跑。核心也可能由 Go watcher 随游戏进程自动拉起，
+// 所以不能只靠按钮点击时记一个本地开关，必须跟着 coreRunning 走。
+export const isLocating = computed(() => coreRunning.value)
 export const updateInfo = ref(null)
+
+// ---- 游戏进程 / 内嵌地图环境（由 status:update 注入）----
+export const gameRunning = ref(false)
+export const gamePid = ref(0)
+export const gameName = ref('')
+export const hasOfflineMap = ref(false)
+export const webOK = ref(true)
+// 游戏路径是否可用（Go 侧探测/配置）；启动按钮据此决定是否先弹选择框
+export const gameExeOk = ref(false)
 
 // ---- 头部状态灯 ----
 // syncText/syncDot 由 computed 驱动（含语言切换实时刷新，不再靠 updateSync 赋值）
@@ -52,7 +63,7 @@ export const target = ref(null)
 export const progressData = ref({})
 
 // ---- 配置 / 环境 ----
-export const cfg = reactive({ saveDirRyujinx: '', saveDirEden: '', emu: 'auto', tls: false, autoOpenMap: true })
+export const cfg = reactive({ saveDirRyujinx: '', saveDirEden: '', emu: 'auto', tls: false, autoOpenMap: true, autoSwitchToMap: true, autoStartOnGame: true, gameExe: '' })
 export const envDetect = reactive({ save: false, saveRyu: false, saveEden: false })
 export const statusMapUrl = ref('')
 
@@ -85,6 +96,18 @@ export const sourceLabel = computed(() => {
 })
 export const locked = computed(() => pos.ok && pos.verified)
 export const locating = computed(() => coreRunning.value && !pos.ok)
+
+// ---- 视图 Tab（控制台 / 地图）----
+export const activeTab = ref('control')
+// 用户手动点过 Tab 后不再自动抢焦点（本局游戏内一直有效）
+export const userTabOverride = ref(false)
+// 本局游戏是否已经自动切过一次地图页
+let autoSwitched = false
+export function setTab(tab) {
+  if (tab !== 'control' && tab !== 'map') return
+  activeTab.value = tab
+  userTabOverride.value = true
+}
 
 // ---- 状态文本（M2：结构化驱动，不再解析日志文本）----
 export const stateText = computed(() => {
@@ -131,12 +154,98 @@ export const targetCrossLayer = computed(() => {
 // ---- 地图 ----
 export const mapUrl = computed(() => statusMapUrl.value || 'https://totk.yalin.site/')
 export function buildMapUrl() {
-  const sep = mapUrl.value.includes('?') ? '&' : '?'
-  return `${mapUrl.value}${sep}follow=1&game=totk`
+  const u = mapUrl.value
+  const extra = []
+  if (!/[?&]follow=/.test(u)) extra.push('follow=1')
+  if (!/[?&]game=/.test(u)) extra.push('game=totk')
+  if (!extra.length) return u
+  const sep = u.includes('?') ? '&' : '?'
+  return `${u}${sep}${extra.join('&')}`
 }
 export function openMap() { rt.BrowserOpenURL(buildMapUrl()) }
 // 在系统默认浏览器打开外部链接（wails runtime，避免 webview 内导航）
 export function openExternal(url) { rt.BrowserOpenURL(url) }
+
+// ---- 内嵌地图来源 ----
+// 离线优先：core 的 web 端（127.0.0.1:8766）内容与线上站点同源，但不受断网影响。
+// 可用性沿用 status.json 的 appReady（app/ 目录 + index.html 就绪）；
+// 打包版不带 app/ 目录时，靠 hasOfflineMap（GUI 自带离线地图）放行。
+export const OFFLINE_MAP_ORIGIN = 'http://127.0.0.1:8766'
+export const mapMode = computed(() => {
+  if (!coreRunning.value || !webOK.value) return 'none'
+  if (appReady.ok || (hasOfflineMap.value && appReady.reason === '')) return 'offline'
+  return 'online'
+})
+export const mapSrc = computed(() => {
+  if (mapMode.value === 'offline') return `${OFFLINE_MAP_ORIGIN}/?follow=1&game=totk`
+  if (mapMode.value === 'online') return buildMapUrl()
+  return ''
+})
+// 刷新地图：跨源 iframe 拿不到 contentWindow，只能靠改 src + 时间戳强制重载
+export const mapRefreshTick = ref(Date.now())
+export function refreshMap() {
+  mapRefreshTick.value = Date.now()
+  if (!mapServerReady.value) {
+    mapProbeDeadline = Date.now() + 15000
+    probeMapServer()
+  }
+}
+
+// 核心进程起来 ≠ HTTP 8766 已 listen；iframe 若在 listen 之前加载会停在
+// "127.0.0.1 拒绝连接"且不会自己恢复。这里先探测 /pos，通达后再挂 iframe。
+export const mapServerReady = ref(false)
+let mapProbeTimer = 0
+let mapProbeDeadline = 0
+function stopMapProbe() {
+  if (mapProbeTimer) {
+    clearTimeout(mapProbeTimer)
+    mapProbeTimer = 0
+  }
+}
+async function probeMapServer() {
+  if (!coreRunning.value || !webOK.value) {
+    mapServerReady.value = false
+    stopMapProbe()
+    return
+  }
+  if (mapServerReady.value) return
+  try {
+    const r = await fetch(`${OFFLINE_MAP_ORIGIN}/pos?t=${Date.now()}`, { cache: 'no-store' })
+    if (r.ok) {
+      mapServerReady.value = true
+      mapRefreshTick.value = Date.now()
+      stopMapProbe()
+      return
+    }
+  } catch { /* 核心仍在启动，继续等 */ }
+  if (Date.now() < mapProbeDeadline) {
+    mapProbeTimer = setTimeout(probeMapServer, 500)
+  }
+}
+watch([coreRunning, webOK], ([run, ok]) => {
+  if (run && ok) {
+    if (!mapServerReady.value) {
+      mapProbeDeadline = Date.now() + 15000
+      stopMapProbe()
+      probeMapServer()
+    }
+  } else {
+    mapServerReady.value = false
+    stopMapProbe()
+  }
+}, { immediate: true })
+
+// 核心重启时 iframe 可能停在"拒绝连接"；定期探活，掉线就回退到启动遮罩并重新探测。
+setInterval(async () => {
+  if (!mapServerReady.value || !coreRunning.value) return
+  try {
+    const r = await fetch(`${OFFLINE_MAP_ORIGIN}/pos?t=${Date.now()}`, { cache: 'no-store' })
+    if (r.ok) return
+  } catch { /* 掉线 */ }
+  mapServerReady.value = false
+  mapProbeDeadline = Date.now() + 15000
+  probeMapServer()
+}, 3000)
 
 // ---- 存档时间戳与相对时间 ----
 export const saveMtime = ref(0)
@@ -254,9 +363,60 @@ function pushLogs(lines) {
 export function clearLogs() { logs.value = [] }
 
 // ---- 操作 ----
+// coreRunning 是唯一事实来源：按钮文案与动作都跟着它走
 export async function toggleLocating() {
-  if (isLocating.value) { await api.StopCore(); isLocating.value = false }
-  else { await api.StartCore(); isLocating.value = true }
+  if (coreRunning.value) await api.StopCore()
+  else await api.StartCore()
+}
+// 模拟器选择（V2.0.0）：改动即保存；core 运行中则提示需重启定位生效
+export async function onEmuChange() {
+  await saveSettings()
+  if (coreRunning.value) {
+    logs.value.push({ time: new Date().toTimeString().slice(0, 8), text: t('emuSwitch'), level: 'warn', color: 'text-amber-400', levelColor: 'text-amber-500' })
+  }
+}
+
+// ---- 启动游戏（PC 重编译版）----
+// 路径由 Go 侧解析：配置 → 常见目录 → 运行中进程路径；找不到时弹选择框。
+export async function detectGameExe() {
+  try {
+    const r = await api.GameExe()
+    gameExeOk.value = !!r.ok
+    if (r.path) cfg.gameExe = r.path
+    return r
+  } catch {
+    return { ok: false }
+  }
+}
+export async function pickGameExe() {
+  const p = await api.PickGameExe()
+  if (p) {
+    cfg.gameExe = p
+    gameExeOk.value = true
+    await saveSettings()
+  }
+  return p
+}
+export async function launchGame() {
+  let r = await api.LaunchGame()
+  if (!r || (!r.ok && r.needPath)) {
+    const p = await api.PickGameExe()
+    if (!p) return { ok: false, canceled: true }
+    cfg.gameExe = p
+    gameExeOk.value = true
+    r = await api.LaunchGame()
+  }
+  if (r && r.ok) {
+    gameExeOk.value = true
+    if (!r.already) {
+      const tn = new Date().toTimeString().slice(0, 8)
+      logs.value.push({ time: tn, text: t('toolbar.launching', { pid: r.pid }), level: 'OK', color: 'text-emerald-300', levelColor: 'text-emerald-400 font-semibold' })
+    }
+  } else if (r && r.error) {
+    const tn = new Date().toTimeString().slice(0, 8)
+    logs.value.push({ time: tn, text: r.error, level: 'ERROR', color: 'text-rose-400', levelColor: 'text-rose-400 font-bold' })
+  }
+  return r
 }
 export async function clearTarget() { await api.ClearTarget() }
 
@@ -308,7 +468,7 @@ export function coordsErrorText(r) {
   return t('cal.missDefault')
 }
 export async function saveSettings() {
-  await api.SaveConfig({ saveDirRyujinx: cfg.saveDirRyujinx, saveDirEden: cfg.saveDirEden, emu: cfg.emu, tls: cfg.tls, autoOpenMap: cfg.autoOpenMap !== false })
+  await api.SaveConfig({ saveDirRyujinx: cfg.saveDirRyujinx, saveDirEden: cfg.saveDirEden, emu: cfg.emu, tls: cfg.tls, autoOpenMap: cfg.autoOpenMap !== false, autoSwitchToMap: cfg.autoSwitchToMap !== false, autoStartOnGame: cfg.autoStartOnGame !== false, gameExe: cfg.gameExe })
   await detectSave()
 }
 export async function pickSaveFile() {
@@ -355,7 +515,6 @@ export async function checkForUpdates() {
 }
 
 // ---- 事件订阅 / 初始化 ----
-let mapAutoOpened = false
 function applyStatus(st) {
   coreRunning.value = !!st.running
   if (st.pos) {
@@ -370,6 +529,12 @@ function applyStatus(st) {
   if (st.lockAddr) pos.lockAddr = st.lockAddr
   pos.ageSec = st.ageSec || 0
   pos.pid = st.pid || 0
+  // 游戏进程与内嵌地图环境（新字段未提供时按 pid 兜底，保证旧 core 也能跑）
+  gameRunning.value = st.gameRunning != null ? !!st.gameRunning : (!!st.running && (st.pid || 0) > 0)
+  gamePid.value = st.gamePid || 0
+  gameName.value = st.gameName || ''
+  hasOfflineMap.value = !!st.hasOfflineMap
+  webOK.value = st.webOK !== false
   if (st.target !== undefined) target.value = st.target
   if (st.saveMtime) {
     saveMtime.value = st.saveMtime
@@ -403,16 +568,31 @@ function applyStatus(st) {
   }
   setStepState()
 }
-// 锁定后才自动打开地图网页：仅本次会话用户点击「开始定位」(isLocating) 后、
-// 且 verified 从 false→true 真实锁定才打开（延迟 1.5s）。避免启动时读到残留 status.json 误开。
+// ---- 锁定后自动切到地图页 ----
+// 规则：真实锁定（verified false→true）且用户没手动选过 Tab、没关自动切页、本局还没切过 → 切 Tab。
+// 不用 BrowserOpenURL：地图已内嵌，切页比另开浏览器自然。autoSwitched 保证一局只切一次，
+// 中途重锁不会把正在看控制台的用户反复弹到地图。
 watch(locked, (val, old) => {
-  if (val && !old && isLocating.value && !mapAutoOpened && (cfg.autoOpenMap !== false)) {
-    mapAutoOpened = true
-    setTimeout(() => rt.BrowserOpenURL(buildMapUrl()), 1500)
+  if (!val || old) return
+  if (cfg.autoSwitchToMap === false || userTabOverride.value || autoSwitched) return
+  autoSwitched = true
+  activeTab.value = 'map'
+})
+// 游戏进程重新拉起 = 新的一局：清掉上一局的 Tab 记录，本局允许再次自动切页；
+// 游戏退出 = 回到控制台，避免地图页停在"游戏未运行"的遮罩上。
+watch(gameRunning, (val, old) => {
+  if (val && !old) {
+    autoSwitched = false
+    userTabOverride.value = false
+  } else if (!val && old) {
+    activeTab.value = 'control'
   }
 })
 export async function initCore() {
-  mapAutoOpened = false // 每次启动重置，仅本次会话真实锁定后才自动开地图
+  autoSwitched = false
+  userTabOverride.value = false
+  activeTab.value = 'control'
+  mapRefreshTick.value = Date.now()
   logs.value = []
   steps.value.forEach(s => { s.state = s.key === 'ready' ? 'done' : 'idle' })
   ver.value = await api.Version()
@@ -422,6 +602,10 @@ export async function initCore() {
   if (c.emu) cfg.emu = c.emu
   cfg.tls = !!c.tls
   if (c.autoOpenMap !== undefined) cfg.autoOpenMap = !!c.autoOpenMap
+  if (c.autoSwitchToMap !== undefined) cfg.autoSwitchToMap = !!c.autoSwitchToMap
+  if (c.autoStartOnGame !== undefined) cfg.autoStartOnGame = !!c.autoStartOnGame
+  if (c.gameExe) cfg.gameExe = c.gameExe
+  await detectGameExe()
   const det = await api.EnvDetect()
   envDetect.save = !!det.save
   envDetect.saveRyu = !!det.saveRyu

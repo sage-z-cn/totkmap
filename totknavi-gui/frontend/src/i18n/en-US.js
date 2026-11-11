@@ -11,7 +11,33 @@ export default {
     settings: 'Settings',
     about: 'About',
     minimize: 'Minimize',
+    maximize: 'Maximize',
+    restore: 'Restore',
     close: 'Close'
+  },
+  tabs: {
+    control: 'Console',
+    map: 'Map'
+  },
+  toolbar: {
+    refresh: 'Refresh',
+    openBrowser: 'Open in browser',
+    mapOffline: 'Offline map',
+    mapOnline: 'Online map',
+    mapNone: 'Not connected',
+    launchGame: 'Launch game',
+    gameRunning: 'Game running',
+    launching: 'Game launched (PID {pid})'
+  },
+  map: {
+    notRunning: 'Location service is not running',
+    notRunningHint: 'Start it to follow your position right here — no need to switch to a browser.',
+    startService: 'Start location service',
+    starting: 'Starting location service…',
+    startingHint: 'The core process is up; waiting for the local map port. This usually takes 1–2 seconds.',
+    retry: 'Retry',
+    portBusy: 'Map port is already in use',
+    portBusyHint: 'Port 8766 on this PC is taken by another program, so the embedded map cannot load. Close that program and hit Refresh, or open the map in your browser instead.'
   },
   sync: {
     waiting: 'Waiting for coordinate stream',
@@ -63,7 +89,7 @@ export default {
     pickTitle: 'Select platform (PC edition uses pc-recomp)'
   },
   buttons: {
-    openMap: 'Open web map',
+    openMap: 'Open map',
     start: 'Start locating',
     locating: 'Locating...',
     browse: 'Browse',
@@ -144,6 +170,12 @@ export default {
     pathAuto: 'Leave blank to auto-detect',
     tls: 'Keep phone awake (Https)',
     tlsWarn: '[Do NOT enable without installing the CA certificate on your phone!]',
+    autoOpenMap: 'Switch to the map tab after locating succeeds',
+    autoSwitchToMap: 'Switch to the map tab after locating succeeds',
+    autoStartOnGame: 'Start locating automatically when the game launches',
+    gamePath: 'Game path (totk.exe):',
+    gamePathOk: '✓ Valid path, ready to launch',
+    gamePathHint: 'Leave blank to auto-detect; click Browse if not found',
     saved: 'Saved',
     pathOk: '✓ Valid path',
     pathBad: 'Path does not exist (core falls back to auto-detect)',

@@ -10,7 +10,33 @@ export default {
     settings: '设置',
     about: '关于',
     minimize: '最小化',
+    maximize: '最大化',
+    restore: '还原',
     close: '关闭'
+  },
+  tabs: {
+    control: '控制台',
+    map: '地图'
+  },
+  toolbar: {
+    refresh: '刷新',
+    openBrowser: '在浏览器打开',
+    mapOffline: '离线地图',
+    mapOnline: '在线地图',
+    mapNone: '未连接',
+    launchGame: '启动游戏',
+    gameRunning: '游戏运行中',
+    launching: '已启动游戏（PID {pid}）'
+  },
+  map: {
+    notRunning: '定位服务未启动',
+    notRunningHint: '启动后可在本窗口内直接查看实时位置，无需另开浏览器。',
+    startService: '启动定位服务',
+    starting: '定位服务启动中…',
+    startingHint: '核心进程已启动，正在等待网页地图端口就绪；通常 1~2 秒即可。',
+    retry: '重试',
+    portBusy: '网页地图端口被占用',
+    portBusyHint: '本机 8766 端口被其他程序占用，内嵌地图无法加载；关闭占用该端口的程序后点「刷新」重试，或先在浏览器里打开。'
   },
   sync: {
     waiting: '等待坐标流',
@@ -62,7 +88,7 @@ export default {
     pickTitle: '选择平台（PC版默认使用 pc-recomp）'
   },
   buttons: {
-    openMap: '打开网页地图',
+    openMap: '打开地图',
     start: '开始定位',
     locating: '正在定位中',
     browse: '浏览',
@@ -143,7 +169,12 @@ export default {
     pathAuto: '留空自动探测',
     tls: '手机防息屏（Https）',
     tlsWarn: '【手机没装 CA 证书，不要勾选！】',
-    autoOpenMap: '定位成功后自动打开网页地图',
+    autoOpenMap: '定位成功后自动切换到地图页',
+    autoSwitchToMap: '定位成功后自动切换到地图页',
+    autoStartOnGame: '游戏启动后自动开始定位',
+    gamePath: '游戏路径（totk.exe）：',
+    gamePathOk: '✓ 路径有效，可直接启动',
+    gamePathHint: '留空自动探测；找不到时点「浏览」选择 totk.exe',
     saved: '已保存',
     pathOk: '✓ 路径有效',
     pathBad: '路径不存在（core 将回退自动探测）',

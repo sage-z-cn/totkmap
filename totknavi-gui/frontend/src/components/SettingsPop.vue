@@ -18,6 +18,16 @@
       <div v-if="saveEdenHint" class="text-[10px] text-slate-600 mt-1" :class="saveEdenOk ? 'text-emerald-400' : ''">{{ saveEdenHint }}</div>
     </div>
     <div>
+      <label class="block text-slate-400 mb-1">{{ t('settings.gamePath') }}</label>
+      <div class="flex gap-1">
+        <input v-model="cfg.gameExe" :placeholder="t('settings.pathAuto')" class="flex-1 bg-[#0d1117] border border-slate-700 rounded px-2 py-1.5 text-white font-mono text-[11px] focus:border-blue-500 focus:outline-none placeholder-slate-600" />
+        <button @click="pickGameExe" class="bg-slate-700 hover:bg-slate-600 px-2 rounded text-xs">{{ t('buttons.browse') }}</button>
+      </div>
+      <div class="text-[10px] mt-1" :class="gameExeOk ? 'text-emerald-400' : 'text-slate-600'">
+        {{ gameExeOk ? t('settings.gamePathOk') : t('settings.gamePathHint') }}
+      </div>
+    </div>
+    <div>
       <label class="block text-slate-400 mb-1">{{ t('settings.workDir') }}</label>
       <div class="flex gap-1 items-center">
         <span class="flex-1 bg-[#0d1117] border border-slate-700 rounded px-2 py-1.5 text-slate-300 font-mono text-[11px] truncate">{{ t('settings.exeDir') }}</span>
@@ -31,10 +41,14 @@
         <span class="text-[10px] text-amber-500/90">{{ t('settings.tlsWarn') }}</span>
       </label>
     </div>
-    <div>
+    <div class="space-y-1 pt-0.5">
       <label class="flex items-center gap-2 cursor-pointer select-none py-1">
-        <input v-model="cfg.autoOpenMap" type="checkbox" class="accent-blue-600 w-3.5 h-3.5" />
-        <span class="text-slate-300">{{ t("settings.autoOpenMap") }}</span>
+        <input v-model="cfg.autoStartOnGame" type="checkbox" class="accent-blue-600 w-3.5 h-3.5" />
+        <span class="text-slate-300">{{ t('settings.autoStartOnGame') }}</span>
+      </label>
+      <label class="flex items-center gap-2 cursor-pointer select-none py-1">
+        <input v-model="cfg.autoSwitchToMap" type="checkbox" class="accent-blue-600 w-3.5 h-3.5" />
+        <span class="text-slate-300">{{ t('settings.autoSwitchToMap') }}</span>
       </label>
     </div>
     <!-- 界面语言（跟随系统 / 中文 / English，即时切换） -->
@@ -50,7 +64,7 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import LangSelect from './LangSelect.vue'
-import { cfg, envDetect, pickSave, saveSettings, openLogDir } from '../composables/useCore'
+import { cfg, envDetect, pickSave, saveSettings, openLogDir, pickGameExe, gameExeOk } from '../composables/useCore'
 
 const { t } = useI18n()
 

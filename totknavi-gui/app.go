@@ -26,22 +26,35 @@ import (
 
 // guiVersion 导航程序版本（与地图网页版本解耦，见 BOTWmap 项目规则第 3 条）。
 // V1.4.9：UI 精简——移除"网页地图选定目标"卡；校准说明文案简化；
-//         校准按钮提交中保持原形状；锁定提示只显示地址。
+//
+//	校准按钮提交中保持原形状；锁定提示只显示地址。
+//
 // V2.0.0：合并双平台核心（totknavi-core.exe，Ryujinx+Eden 统一）——新增模拟器选择
-//         （自动/Ryujinx/Eden），存档设置保留，坐标校准文件通道适配新核心。
+//
+//	（自动/Ryujinx/Eden），存档设置保留，坐标校准文件通道适配新核心。
+//
 // V2.1.1：新增「手机防息屏（Https）」开关 —— 核心启动时带 --tls，
-//         手机镜像页走 HTTPS（secure context，wakeLock 防息屏生效）。
+//
+//	手机镜像页走 HTTPS（secure context，wakeLock 防息屏生效）。
+//
 // V2.1.2：GUI 状态栏显示手机镜像地址（三色就绪点 + 一键复制）；坐标校准
-//         预检弹窗（>50m 警告可强制继续，Vue 悬浮卡）。
+//
+//	预检弹窗（>50m 警告可强制继续，Vue 悬浮卡）。
+//
 // V2.2.0：核心新增第 6 条锁定途径「指针链快路径」（跑动掉锁后毫秒级重锁）；
-//         GUI 侧无 UI 改动，仅版本号对齐核心。
+//
+//	GUI 侧无 UI 改动，仅版本号对齐核心。
+//
 // V3.1.2：对齐核心版本 v3.1.2，PC 重编译版静态指针链直读秒锁 + 修复存档 mtime 乱序。
 // V3.1.1：对齐核心版本 v3.1.1，PC 重编译版补齐 /target 导航目标与状态同步。
 // V3.1.0：对齐核心版本 v3.1.0，支持 PC 重编译版与模拟器版并列架构。
 // V3.0.1：全线品牌改名 xnavi -> totknavi（窗口标题、包名、镜像页统一）；
-//         进度看板新增第 21 类「宝箱」，分类计数文案 20 -> 21。
+//
+//	进度看板新增第 21 类「宝箱」，分类计数文案 20 -> 21。
+//
 // V3.0.0：跨场景持久槽定位（传送 / 神庙零重扫，1.5s 秒锁）；
-//         GUI 与核心版本解耦后同号对齐。
+//
+//	GUI 与核心版本解耦后同号对齐。
 const guiVersion = "v3.1.2"
 
 // App Wails 后端：管理核心子进程 + 读 status.json / xnavi-gui-core.log + 网页端端口探测。
@@ -55,6 +68,13 @@ type App struct {
 	logBuf    []string
 	logMarker string
 	cfg       *Config
+
+	// 游戏进程 watcher 状态（全部由 mu 保护，见 gamewatch.go）
+	gamePid     uint32 // 当前识别到的游戏进程 PID（0 = 未运行）
+	gameName    string // 游戏进程名（原样，未转小写）
+	gameRunning bool   // 游戏是否在运行（去抖后）
+	userStopped bool   // 用户手动停止过核心 → 本局不再自动启动
+	coreGamePid uint32 // 核心当前服务的游戏 PID（用于识别游戏重启）
 }
 
 // Config GUI 持久化配置（xnavi-gui-config.json）。
@@ -65,9 +85,17 @@ type App struct {
 type Config struct {
 	SaveDirRyujinx string `json:"saveDirRyujinx,omitempty"`
 	SaveDirEden    string `json:"saveDirEden,omitempty"`
-	Emu            string `json:"emu,omitempty"` // "auto"（默认）/ "ryujinx" / "eden"
-	TLS            bool   `json:"tls,omitempty"` // 手机防息屏（Https）
-	AutoOpenMap    *bool  `json:"autoOpenMap,omitempty"` // 锁定后自动打开网页地图（默认 true）
+	Emu            string `json:"emu,omitempty"`         // "auto"（默认）/ "ryujinx" / "eden"
+	TLS            bool   `json:"tls,omitempty"`         // 手机防息屏（Https）
+	AutoOpenMap    *bool  `json:"autoOpenMap,omitempty"` // 旧字段：锁定后自动打开外部网页地图（保留兼容）
+	// AutoSwitchToMap 定位成功后自动切到内嵌地图页（默认 true）。
+	// 与旧 autoOpenMap 分开：旧字段控制"另开系统浏览器"，沿用旧 false 会误伤新行为。
+	AutoSwitchToMap *bool `json:"autoSwitchToMap,omitempty"`
+
+	// AutoStartOnGame 检测到游戏启动时自动拉起核心（默认 true）。
+	AutoStartOnGame *bool `json:"autoStartOnGame,omitempty"`
+	// GameExe PC 重编译版游戏本体路径；为空时按常见目录自动探测。
+	GameExe string `json:"gameExe,omitempty"`
 }
 
 func (a *App) configPath() string { return filepath.Join(a.workDir, "xnavi-gui-config.json") }
@@ -87,9 +115,17 @@ func (a *App) loadConfig() *Config {
 			cfg.SaveDirEden = lg.SaveDir
 		}
 	}
-		if cfg.AutoOpenMap == nil {
+	if cfg.AutoOpenMap == nil {
 		t := true
 		cfg.AutoOpenMap = &t
+	}
+	if cfg.AutoSwitchToMap == nil {
+		t := true
+		cfg.AutoSwitchToMap = &t
+	}
+	if cfg.AutoStartOnGame == nil {
+		t := true
+		cfg.AutoStartOnGame = &t
 	}
 	return cfg
 }
@@ -118,6 +154,7 @@ func (a *App) startup(ctx context.Context) {
 	a.cfg = a.loadConfig()
 	a.tailInit()
 	go a.eventBridge(ctx)
+	go a.watchGame(ctx)
 	// go a.checkUpdate() // 取消启动自动检查更新
 	go a.ensureWindowVisible()
 	// 手动检查更新
@@ -349,8 +386,12 @@ func verGreater(x, y string) bool {
 	px := parseVer(x)
 	py := parseVer(y)
 	for i := 0; i < 3; i++ {
-		if px[i] > py[i] { return true }
-		if px[i] < py[i] { return false }
+		if px[i] > py[i] {
+			return true
+		}
+		if px[i] < py[i] {
+			return false
+		}
 	}
 	return false
 }
@@ -362,7 +403,9 @@ func parseVer(s string) [3]int {
 	for i := 0; i < len(parts) && i < 3; i++ {
 		n := 0
 		for _, c := range parts[i] {
-			if c < '0' || c > '9' { break }
+			if c < '0' || c > '9' {
+				break
+			}
 			n = n*10 + int(c-'0')
 		}
 		r[i] = n
@@ -372,7 +415,9 @@ func parseVer(s string) [3]int {
 
 func (a *App) PickDir(title string) string {
 	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: title})
-	if err != nil { return "" }
+	if err != nil {
+		return ""
+	}
 	return dir
 }
 
@@ -559,16 +604,38 @@ func (a *App) corePath() string {
 	return filepath.Join(a.workDir, "totknavi-core.exe")
 }
 
-// StartCore 启动核心子进程（totknavi-core.exe --no-open --emu=<auto|ryujinx|eden>）。
-// V2.0.0：双平台统一核心；模拟器由 Config.Emu 决定（默认 auto 自动探测）。
-// 重复调用会先停掉旧进程。
+// StartCore 启动核心子进程（手动按钮）。启动成功后清除"本局已手动停止"标记，
+// 之后游戏重启仍会自动拉起核心。
 func (a *App) StartCore() string {
+	err := a.startCoreInternal()
+	if err != nil {
+		return err.Error()
+	}
+	emu := a.emuMode()
+	a.mu.Lock()
+	a.userStopped = false
+	a.coreGamePid = a.gamePid
+	a.mu.Unlock()
+	return fmt.Sprintf("核心已启动（%s · TOTK）", emuLabel(emu))
+}
+
+// startCoreInternal 启动核心子进程（totknavi-core.exe --no-open --emu=<...>）。
+// V2.0.0：双平台统一核心；模拟器由 Config.Emu 决定（默认 auto 自动探测）。
+// 重复调用会先停掉旧进程；若系统里有本 GUI 不认识的孤儿核心进程（上次崩溃残留），
+// 先结束掉，避免它继续占着 8766 端口。错误文案直接面向用户。
+func (a *App) startCoreInternal() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	managed := a.cmd != nil // 本 GUI 管理的核心进程（当前实例启动的）
 	a.stopCoreLocked()
 	exe := a.corePath()
 	if _, err := os.Stat(exe); err != nil {
-		return "找不到核心程序 totknavi-core.exe（应放在本程序同目录）"
+		return fmt.Errorf("找不到核心程序 totknavi-core.exe（应放在本程序同目录）")
+	}
+	if !managed {
+		if n := killOrphanCore(); n > 0 {
+			a.guiLog("清理残留的核心进程 %d 个（避免端口占用）", n)
+		}
 	}
 	emu := "auto"
 	if a.cfg != nil && a.cfg.Emu != "" {
@@ -600,11 +667,18 @@ func (a *App) StartCore() string {
 		cmd.Stderr = f
 	}
 	if err := cmd.Start(); err != nil {
-		return "启动失败: " + err.Error()
+		return fmt.Errorf("启动失败: %v", err)
 	}
 	a.cmd = cmd
-	go func() { cmd.Wait(); a.mu.Lock(); if a.cmd == cmd { a.cmd = nil }; a.mu.Unlock() }()
-	return fmt.Sprintf("核心已启动（%s · TOTK）", emuLabel(emu))
+	go func() {
+		cmd.Wait()
+		a.mu.Lock()
+		if a.cmd == cmd {
+			a.cmd = nil
+		}
+		a.mu.Unlock()
+	}()
+	return nil
 }
 
 func emuLabel(e string) string {
@@ -618,11 +692,14 @@ func emuLabel(e string) string {
 	}
 }
 
-// StopCore 停止核心子进程。
+// StopCore 停止核心子进程（手动按钮）。本局不再自动启动，直到用户再次点开始，
+// 或游戏退出（游戏退出会复位该标记）。
 func (a *App) StopCore() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.stopCoreLocked()
+	a.userStopped = true
+	a.coreGamePid = 0
 	return "已停止"
 }
 
@@ -643,10 +720,13 @@ func (a *App) CoreRunning() bool {
 // statusPath 核心每 2s 写的会话快照。
 func (a *App) statusPath() string { return filepath.Join(a.workDir, "status.json") }
 
-// CoreStatus 读 status.json 并附加 GUI 侧状态（running / webOK / webNote）。
+// CoreStatus 读 status.json 并附加 GUI 侧状态（running / webOK / webNote / 游戏进程）。
 func (a *App) CoreStatus() map[string]any {
 	a.mu.Lock()
 	running := a.cmd != nil && a.cmd.Process != nil
+	gameRunning := a.gameRunning
+	gamePid := a.gamePid
+	gameName := a.gameName
 	a.mu.Unlock()
 	obj := map[string]any{"running": running}
 	buf, err := os.ReadFile(a.statusPath())
@@ -670,6 +750,13 @@ func (a *App) CoreStatus() map[string]any {
 		obj["webOK"] = false
 		obj["webNote"] = "HTTP 端口被占用：网页端不可用，GUI 定位正常（双入口独立）"
 	}
+	// 游戏进程状态（gamewatch.go）：前端据此显示"游戏已启动/未启动"，
+	// 并判断自动启动是否生效。
+	obj["gameRunning"] = gameRunning
+	obj["gamePid"] = gamePid
+	obj["gameName"] = gameName
+	// 离线地图：workDir\app\index.html 存在才可内嵌浏览。
+	obj["hasOfflineMap"] = pathExists(filepath.Join(a.workDir, "app", "index.html"))
 	return obj
 }
 

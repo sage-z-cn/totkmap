@@ -6,6 +6,9 @@ export namespace main {
 	    emu?: string;
 	    tls?: boolean;
 	    autoOpenMap?: boolean;
+	    autoSwitchToMap?: boolean;
+	    autoStartOnGame?: boolean;
+	    gameExe?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -18,6 +21,9 @@ export namespace main {
 	        this.emu = source["emu"];
 	        this.tls = source["tls"];
 	        this.autoOpenMap = source["autoOpenMap"];
+	        this.autoSwitchToMap = source["autoSwitchToMap"];
+	        this.autoStartOnGame = source["autoStartOnGame"];
+	        this.gameExe = source["gameExe"];
 	    }
 	}
 

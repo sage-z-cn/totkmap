@@ -30,6 +30,14 @@ export function ExportDiagnostics() {
   return window['go']['main']['App']['ExportDiagnostics']();
 }
 
+export function GameExe() {
+  return window['go']['main']['App']['GameExe']();
+}
+
+export function LaunchGame() {
+  return window['go']['main']['App']['LaunchGame']();
+}
+
 export function LoadConfig() {
   return window['go']['main']['App']['LoadConfig']();
 }
@@ -44,6 +52,10 @@ export function OpenSaveDir() {
 
 export function PickDir(arg1) {
   return window['go']['main']['App']['PickDir'](arg1);
+}
+
+export function PickGameExe() {
+  return window['go']['main']['App']['PickGameExe']();
 }
 
 export function PickSaveFile() {
