@@ -12,6 +12,14 @@ import (
 var assets embed.FS
 
 func main() {
+	// 单实例：已有实例在跑时，把它的窗口拉到前台，本次启动到此结束。
+	// 必须放在最前面——等 wails.Run 之后才拦就晚了：第二个实例会先初始化 WebView、
+	// 拉起自己的核心，并把前一个实例的核心当成"残留进程"杀掉。
+	if !acquireSingleInstance() {
+		focusRunningInstance()
+		return
+	}
+
 	app := NewApp()
 
 	err := wails.Run(&options.App{
