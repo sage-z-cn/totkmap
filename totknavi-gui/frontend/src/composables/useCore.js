@@ -598,6 +598,24 @@ function applyStatus(st) {
 // 规则：真实锁定（verified false→true）且用户没手动选过 Tab、没关自动切页、本局还没切过 → 切 Tab。
 // 不用 BrowserOpenURL：地图已内嵌，切页比另开浏览器自然。autoSwitched 保证一局只切一次，
 // 中途重锁不会把正在看控制台的用户反复弹到地图。
+
+// 移屏请求：单次失败不等于整局放弃。后端在「窗口句柄还没就绪 / 写入失败」这类瞬时
+// 状态下会返回 ok:false，这里按 0/400/1200/2500ms 重试；明确不可重试的原因直接结束。
+// navi-minimized 不重试：用户的窗口缩在任务栏时不该被弹出来抢游戏焦点。
+const MOVE_RETRY_DELAYS = [0, 400, 1200, 2500]
+const MOVE_NO_RETRY = ['disabled', 'single-monitor', 'target-not-found', 'navi-minimized']
+async function arrangeWindowForGame() {
+  for (let i = 0; i < MOVE_RETRY_DELAYS.length; i++) {
+    if (MOVE_RETRY_DELAYS[i]) await new Promise(r => setTimeout(r, MOVE_RETRY_DELAYS[i]))
+    if (!gameRunning.value) return // 游戏已退出：不再移屏，避免留下无人还原的快照
+    let r = null
+    try { r = await api.ArrangeWindowForGame() } catch { continue }
+    if (r && r.moved) { await syncWindowMaximised(); return }
+    if (r && r.ok) return // 已经在目标副屏上最大化，无需再试
+    if (r && MOVE_NO_RETRY.includes(r.reason)) return
+  }
+}
+
 watch(locked, (val, old) => {
   if (!val || old) return
   // 自动切地图页（可被用户手动选 Tab / 设置关闭）
@@ -605,15 +623,10 @@ watch(locked, (val, old) => {
     autoSwitched = true
     activeTab.value = 'map'
   }
-  // 自动移到游戏所在屏之外的屏幕并最大化（独立设置，不受 Tab 影响）
+  // 自动移到副屏（Windows 主显示器之外的屏幕）并最大化（独立设置，不受 Tab 影响）
   if (cfg.autoMoveToSecondary !== false && !autoMoved) {
     autoMoved = true
-    setTimeout(async () => {
-      try {
-        const r = await api.ArrangeWindowForGame()
-        if (r && r.moved) await syncWindowMaximised()
-      } catch { /* 移屏失败不影响定位 */ }
-    }, 250)
+    setTimeout(arrangeWindowForGame, 250)
   }
 })
 // 游戏进程重新拉起 = 新的一局：清掉上一局的 Tab 记录，本局允许再次自动切页；

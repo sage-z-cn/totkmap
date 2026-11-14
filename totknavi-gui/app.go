@@ -77,9 +77,10 @@ type App struct {
 	coreGamePid uint32 // 核心当前服务的游戏 PID（用于识别游戏重启）
 
 	// 定位后自动移屏的还原快照（window_layout.go）
-	windowSaved      bool
-	savedPlacement   wlWindowPlacement
-	moveTargetHandle uintptr
+	windowSaved    bool
+	savedPlacement wlWindowPlacement
+	// moveTargetName 移屏目标显示器的设备名。不存 HMONITOR：显示器模式切换/换线后句柄会失效。
+	moveTargetName string
 
 	// GUI 自带网页地图托管（mapserver.go）：核心未启动时也能看地图
 	mapSrv      *http.Server
@@ -148,14 +149,21 @@ func (a *App) loadConfig() *Config {
 	return cfg
 }
 
+// SaveConfig 保存并替换内存中的配置。
+// 必须持有 a.mu：移屏/进程 watcher 都在锁内读 a.cfg，指针裸替换属于数据竞争。
 func (a *App) SaveConfig(c Config) string {
-	a.cfg = &c
-	buf, _ := json.MarshalIndent(c, "", "  ")
+	cfg := c
+	a.mu.Lock()
+	a.cfg = &cfg
+	a.mu.Unlock()
+	buf, _ := json.MarshalIndent(cfg, "", "  ")
 	os.WriteFile(a.configPath(), buf, 0644)
 	return "已保存"
 }
 
 func (a *App) LoadConfig() Config {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.cfg == nil {
 		a.cfg = a.loadConfig()
 	}
@@ -182,69 +190,45 @@ func (a *App) startup(ctx context.Context) {
 	})
 }
 
-// ensureWindowVisible 启动后把主窗口移回主屏可见区域。
-// 防御性兜底：若窗口因 DPI 缩放/多屏/分辨率切换落在屏幕外（部分超屏），
-// 用 EnumWindows 按进程 PID 找主窗口（比 FindWindow 标题匹配可靠），
-// 超界则 SetWindowPos 移到主屏居中；窗口本来就在屏内则不动。
+// ensureWindowVisible 启动后把主窗口挪回可见区域。
+// 防御性兜底：窗口因 DPI 缩放/多屏/分辨率切换落在所有显示器之外时，挪回 Windows
+// 主显示器居中；只要与任意一块显示器相交就不动。判断必须按「全部显示器的并集」，
+// 不能用主屏尺寸——副屏在主屏左侧/上方时坐标是负数，那样会把正常窗口误判成跑出屏幕。
 func (a *App) ensureWindowVisible() {
 	time.Sleep(1 * time.Second)
-	user32 := syscall.NewLazyDLL("user32.dll")
-	enumWindows := user32.NewProc("EnumWindows")
-	getWindowThreadProcessId := user32.NewProc("GetWindowThreadProcessId")
-	getWindowRect := user32.NewProc("GetWindowRect")
-	getSystemMetrics := user32.NewProc("GetSystemMetrics")
-	setWindowPos := user32.NewProc("SetWindowPos")
-
-	const (
-		smCxScreen = 0
-		smCyScreen = 1
-		swpNoZ     = 0x0004
-		swpNoAct   = 0x0010
-	)
-
-	myPid := uint32(os.Getpid())
-	var hwnd uintptr
-	cb := syscall.NewCallback(func(h uintptr, lparam uintptr) uintptr {
-		var pid uint32
-		getWindowThreadProcessId.Call(h, uintptr(unsafe.Pointer(&pid)))
-		if pid == myPid {
-			hwnd = h
-			return 0 // 停止枚举
-		}
-		return 1
-	})
-	enumWindows.Call(cb, 0)
+	hwnd := wlFindMainWindow(uint32(os.Getpid()), true)
 	if hwnd == 0 {
 		return
 	}
-
-	var rect struct {
-		Left, Top, Right, Bottom int32
-	}
-	if r, _, _ := getWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&rect))); r == 0 {
+	var rect wlRect
+	if r, _, _ := wlGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&rect))); r == 0 {
 		return
 	}
-	sw, _, _ := getSystemMetrics.Call(smCxScreen)
-	sh, _, _ := getSystemMetrics.Call(smCyScreen)
-	if int32(sw) == 0 || int32(sh) == 0 {
+	monitors := wlMonitors()
+	if len(monitors) == 0 {
 		return
 	}
-	w := rect.Right - rect.Left
-	h := rect.Bottom - rect.Top
-	// 窗口完全在屏幕内 → 不动
-	if rect.Left >= 0 && rect.Top >= 0 && rect.Right <= int32(sw) && rect.Bottom <= int32(sh) {
+	for _, m := range monitors {
+		if rect.intersects(m.Info.Monitor) {
+			return
+		}
+	}
+	primary, ok := wlPrimaryMonitor(monitors)
+	if !ok {
 		return
 	}
-	x := (int32(sw) - w) / 2
-	y := (int32(sh) - h) / 2
-	if x < 0 {
-		x = 0
+	work := primary.Info.Work
+	w, h := rect.width(), rect.height()
+	if w <= 0 || w > work.width() {
+		w = work.width()
 	}
-	if y < 0 {
-		y = 0
+	if h <= 0 || h > work.height() {
+		h = work.height()
 	}
-	setWindowPos.Call(hwnd, 0, uintptr(x), uintptr(y), uintptr(w), uintptr(h), swpNoZ|swpNoAct)
-	fmt.Println("  [gui] window repositioned to center:", x, y)
+	x := work.Left + (work.width()-w)/2
+	y := work.Top + (work.height()-h)/2
+	wlSetWindowPos.Call(hwnd, 0, uintptr(x), uintptr(y), uintptr(w), uintptr(h), swpNoZOrder|swpNoActivate)
+	fmt.Println("  [gui] window moved back to primary display:", x, y)
 }
 
 // winSystemProxyURL 读取 Windows 注册表系统代理（ProxyEnable=1 时返回 http://host:port）。

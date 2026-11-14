@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -95,10 +96,16 @@ func (a *App) PickGameExe() string {
 //	{ok:false, needPath:true}      找不到路径，需要用户选择
 //	{ok:false, error}              启动失败
 func (a *App) LaunchGame() map[string]any {
-	if pid, name := findGameProcess(a.emuMode()); pid != 0 {
-		return map[string]any{"ok": true, "already": true, "pid": pid, "name": name}
-	}
 	exe := a.resolveGameExe()
+	// 只有「当前跑着的进程就是本配置的游戏本体」才算已在运行：auto 模式下
+	// Ryujinx/Eden 常驻托盘很常见，只按进程名匹配会把它们误判成游戏，
+	// 表现为点了「启动游戏」却没有反应。
+	if pid, name := findGameProcess(a.emuMode()); pid != 0 {
+		running := strings.ToLower(gwProcessPath(pid))
+		if exe == "" || running == "" || running == strings.ToLower(exe) {
+			return map[string]any{"ok": true, "already": true, "pid": pid, "name": name}
+		}
+	}
 	if exe == "" {
 		return map[string]any{"ok": false, "needPath": true, "error": "未找到游戏程序，请先选择 totk.exe 路径"}
 	}

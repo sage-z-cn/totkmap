@@ -116,25 +116,42 @@ func gwClose(h uintptr) {
 	}
 }
 
-// matchGameProcName 判断进程名（已转小写）是否为当前配置下的游戏本体。
-// auto 模式接受全部平台；指定平台时只认那一个。
-func matchGameProcName(name, emu string) bool {
+// matchGameProcRank 进程名（已转小写）与当前配置下游戏本体的匹配优先级：
+// 0 = PC 重编译版 totk.exe（最优），1 = 模拟器，-1 = 不匹配。
+//
+// auto 模式必须区分优先级：Ryujinx/Eden 常驻托盘时若按枚举顺序先命中模拟器，
+// watcher 会把模拟器当成"游戏在跑"——游戏退出后永远不判定退出，移屏的窗口还原
+// 就再也不触发。指定平台时只认那一个。
+func matchGameProcRank(name, emu string) int {
 	isPC := name == "totk.exe"
 	isRyujinx := strings.HasPrefix(name, "ryujinx")
 	isEden := strings.HasPrefix(name, "eden") && !strings.HasPrefix(name, "eden-core")
 	switch emu {
 	case "ryujinx":
-		return isRyujinx
+		if isRyujinx {
+			return 0
+		}
 	case "eden":
-		return isEden
+		if isEden {
+			return 0
+		}
 	case "auto", "":
-		return isPC || isRyujinx || isEden
+		if isPC {
+			return 0
+		}
+		if isRyujinx || isEden {
+			return 1
+		}
 	default: // "pc" 及未知值：按 PC 重编译版处理
-		return isPC
+		if isPC {
+			return 0
+		}
 	}
+	return -1
 }
 
-// findGameProcess 枚举进程，返回第一个匹配的游戏进程（排除自身与核心进程）。
+// findGameProcess 枚举进程，返回优先级最高的游戏进程（排除自身与核心进程）。
+// 同优先级取先枚举到的那个。
 func findGameProcess(emu string) (uint32, string) {
 	snap, _, _ := gwSnapshot.Call(th32csSnapProcess, 0)
 	if snap == 0 || snap == uintptr(^uintptr(0)) {
@@ -145,16 +162,22 @@ func findGameProcess(emu string) (uint32, string) {
 	myPid := uint32(os.Getpid())
 	var e ProcessEntry32W
 	e.Size = uint32(unsafe.Sizeof(e))
+	bestPid, bestName, bestRank := uint32(0), "", 99
 	r, _, _ := gwProcess32FirstW.Call(snap, uintptr(unsafe.Pointer(&e)))
 	for r != 0 {
 		name := gwUTF16ToString(e.ExeFile[:])
 		lower := strings.ToLower(name)
-		if e.ProcessID != myPid && lower != coreProcName && matchGameProcName(lower, emu) {
-			return e.ProcessID, name
+		if e.ProcessID != myPid && lower != coreProcName {
+			if rank := matchGameProcRank(lower, emu); rank >= 0 && rank < bestRank {
+				bestPid, bestName, bestRank = e.ProcessID, name, rank
+				if rank == 0 {
+					break // 已是最优优先级，不必继续扫
+				}
+			}
 		}
 		r, _, _ = gwProcess32NextW.Call(snap, uintptr(unsafe.Pointer(&e)))
 	}
-	return 0, ""
+	return bestPid, bestName
 }
 
 // killOrphanCore 结束系统里残留的 totknavi-core.exe（GUI 重启后不认识的老进程），
