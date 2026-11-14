@@ -21,6 +21,8 @@ import (
 	"time"
 )
 
+var dragonFixedBase uintptr
+
 func main() {
 	setConsoleTitle("TOTKnavi-PC 定位探针")
 
@@ -32,6 +34,14 @@ func main() {
 		watchMode  bool
 		findMode   bool
 		probeMode  bool
+		dragonMode bool
+		dragonWide bool
+		dragonTrack string
+		playtimeMode bool
+		worldtimeMode bool
+		gametimeArg int
+		gametime5Mode bool
+		totalmsMode bool
 		sampleArg  string
 		sampleSec  = 10
 		gapSec     = 3
@@ -78,6 +88,38 @@ func main() {
 			// 兼容 totknavi-gui 传入的 --emu 参数
 		case "--find":
 			findMode = true
+		case "--dragons":
+			dragonMode = true
+		case "--dragons-wide":
+			dragonWide = true
+		case "--dragon-track":
+			if i+1 < len(args) {
+				dragonTrack = args[i+1]
+				i++
+			}
+		case "--playtime":
+			playtimeMode = true
+		case "--worldtime":
+			worldtimeMode = true
+		case "--gametime":
+			if i+1 < len(args) {
+				if v, err := strconv.Atoi(args[i+1]); err == nil {
+					gametimeArg = v
+				}
+				i++
+			}
+		case "--gametime5":
+			gametime5Mode = true
+		case "--totalms":
+			totalmsMode = true
+		case "--dragon-base":
+			if i+1 < len(args) {
+				s := strings.TrimPrefix(strings.TrimPrefix(args[i+1], "0x"), "0X")
+				if v, err := strconv.ParseUint(s, 16, 64); err == nil {
+					dragonFixedBase = uintptr(v)
+				}
+				i++
+			}
 		case "--probe":
 			probeMode = true
 		case "--sample":
@@ -229,6 +271,46 @@ func main() {
 			}
 		}
 		sampleAddrs(p, addrs, sampleSec)
+		return
+	}
+
+	if playtimeMode {
+		runPlaytimeProbe(p)
+		return
+	}
+
+	if worldtimeMode {
+		runWorldtimeProbe(p)
+		return
+	}
+
+	if gametimeArg > 0 {
+		runGametimeProbe(p, gametimeArg)
+		return
+	}
+
+	if gametime5Mode {
+		runGametime5Probe(p)
+		return
+	}
+
+	if totalmsMode {
+		runTotalMsProbe(p, plat)
+		return
+	}
+
+	if dragonTrack != "" {
+		runDragonTrack(p, parseAddrList(dragonTrack), 2*time.Second, 12)
+		return
+	}
+
+	if dragonWide {
+		runDragonWideProbe(p, appRoot)
+		return
+	}
+
+	if dragonMode {
+		runDragonProbe(p, appRoot)
 		return
 	}
 

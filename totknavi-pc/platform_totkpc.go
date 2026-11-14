@@ -321,6 +321,44 @@ func (p *totkpcPlatform) Blocks(minMB float64) []MemBlock {
 	return out
 }
 
+// blocksAll 返回全部已提交可读块（不限主堆范围），供龙追踪的宽扫描使用。
+func (p *totkpcPlatform) blocksAll(minMB float64) []MemBlock {
+	if p.h == 0 {
+		return nil
+	}
+	minSize := uintptr(minMB * 1048576.0)
+	const floor = uintptr(64 * 1024)
+	if minSize < floor {
+		minSize = floor
+	}
+	const limit = uintptr(0x7FFFFFFFFFFF)
+	var out []MemBlock
+	addr := uintptr(0)
+	for addr < limit {
+		var mbi MemoryBasicInformation
+		if virtualQueryEx(p.h, addr, &mbi) == 0 {
+			break
+		}
+		base, size := mbi.BaseAddress, mbi.RegionSize
+		if mbi.State == memCommit && size >= minSize {
+			prot := mbi.Protect
+			readable := prot&0x01 == 0 && prot&pageGuard == 0
+			writable := prot&0xCC != 0
+			// 只扫游戏堆（龙坐标实测在 0x13x~0x1Bx），排除主模块、exe、GPU 映射与只读区。
+			if readable && writable && base >= 0x130000000 && base < 0x400000000 {
+				out = append(out, MemBlock{Base: base, Size: size, Writable: writable})
+			}
+		}
+		nxt := base + size
+		if nxt > addr {
+			addr = nxt
+		} else {
+			addr += 0x1000
+		}
+	}
+	return out
+}
+
 // LargestBlock 返回最大可读块（诊断用）。
 func (p *totkpcPlatform) LargestBlock(minMB float64) (uintptr, uintptr) {
 	var bb, bs uintptr

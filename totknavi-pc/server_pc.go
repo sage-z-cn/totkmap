@@ -152,11 +152,15 @@ func serveRun(p Platform, plat *totkpcPlatform, anchor *[3]float32, addr uintptr
 	mux.HandleFunc("/logs", handleLogsPC)
 	mux.HandleFunc("/save-info", handleSaveInfoPC)
 	mux.HandleFunc("/gui", handleGuiPC)
+	mux.HandleFunc("/dragons", handleDragonsPC)
+	mux.HandleFunc("/dragons/rescan", handleDragonsRescanPC)
+	mux.HandleFunc("/dragons/calibrate", handleDragonsCalibratePC)
 
 	initLanURL(port)
 
 	// 智能多级探测地图网页目录（必须包含 index.html）
 	appRoot = findAppDir(appRoot)
+	startDragonTracker(p, appRoot, dragonFixedBase)
 	if appRoot != "" {
 		fileServer := http.FileServer(http.Dir(appRoot))
 		// /botw/ 路由：手机镜像专用（契约：live.js 依此识别同源局域网服务）

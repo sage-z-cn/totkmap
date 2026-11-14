@@ -33,6 +33,7 @@
   var group = null;
   var curLayer = 18;
   var ready = false;
+  var heads = [];
 
   /* ---------- 小工具 ---------- */
   function $(id) { return document.getElementById(id); }
@@ -144,12 +145,14 @@
         icon: icon,
         riseOnHover: true
       });
+      mk._dragonId = d.id;
       mk.bindTooltip(window.I18N ? (window.I18N.nameOf(d.name) || d.name) : d.name, {
         direction: 'top',
         offset: [0, -14],
         className: 'mk-label dlg-tip'
       });
       mk.addTo(g);
+      heads.push(mk);
     });
   }
 
@@ -184,6 +187,7 @@
   function render() {
     if (!map) return;
     if (group) { map.removeLayer(group); group = null; }
+    heads = [];
     if (!isOn()) return;
 
     var g = L.layerGroup();
@@ -229,6 +233,7 @@
 
     g.addTo(map);
     group = g;
+    applyLiveIds();
   }
 
   /* ---------- 监听：分类选中状态 ---------- */
@@ -243,6 +248,14 @@
        切层导致的重置 → 没有任何点击，按 userOn 补勾。 */
   var userOn = false;
   var lastSig = '';
+  var lastLiveIds = {};
+
+  function applyLiveIds() {
+    heads.forEach(function (m) {
+      var el = m.getElement ? m.getElement() : null;
+      if (el) el.style.display = lastLiveIds[m._dragonId] ? 'none' : '';
+    });
+  }
 
   function signature() {
     return curLayer + '|' + (isOn() ? '1' : '0');
@@ -314,7 +327,11 @@
     window.DragonLayer = {
       render: render,
       isVisible: isOn,
-      items: ITEMS
+      items: ITEMS,
+      setLiveIds: function (ids) {
+        lastLiveIds = ids || {};
+        applyLiveIds();
+      }
     };
   }
 
