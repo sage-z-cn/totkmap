@@ -98,6 +98,40 @@
   var MAX_ZOOM = 7;   // V1.9.0: z7 尺寸由 z6 瓦片 2× 自动缩放实现（maxNativeZoom=6 保持不变），材料聚合 maxZoom 同步 7
   var MIN_ZOOM = 3;
 
+  /* ---------------- 缩放百分比持久化（本地补丁） ----------------
+   * 现象：重启 TOTKnavi / 地图 iframe 重载后，倍率固定回到某个值，用户上次的缩放丢失。
+   * 原因：倍率从来没存过 —— L.map 写死 zoom: 5，初始化又 setView(CENTER, 3)，
+   *       live.js 的 ?follow=1 分支再强推 800%（z6），三步都是硬编码。
+   * 口径：只存 Leaflet zoom 级别（MIN_ZOOM..MAX_ZOOM，zoomSnap 0.5 允许半级），
+   *       显示用的百分比仍由 updateZoomPct() 换算，避免两套数值口径。 */
+  var LS_ZOOM = 'totkmap.zoom.v1';
+  function clampZoom(z) {
+    return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
+  }
+  function loadZoom() {
+    try {
+      var raw = localStorage.getItem(LS_ZOOM);
+      if (raw == null || String(raw).trim() === '') return null;
+      var z = Number(raw);
+      return isFinite(z) ? clampZoom(z) : null;
+    } catch (e) { return null; }
+  }
+  function saveZoom(z) {
+    try { localStorage.setItem(LS_ZOOM, String(clampZoom(z))); } catch (e) {}
+  }
+  /* 启动快照：null 表示「本机从没存过倍率」（首次运行），
+   * live.js 据此决定跟随启动时用导航默认 800%，还是用用户上次的倍率。
+   * 不能在 live.js 里现读 localStorage —— app.js 初始化 setView 会先把默认倍率写进去，
+   * 那样首次运行也会被误判成「用户存过」。 */
+  var ZOOM_AT_BOOT = loadZoom();
+  /* 初始化视图用的倍率（无保存值 = 全图 z3）。 */
+  var ZOOM_INIT = ZOOM_AT_BOOT != null ? ZOOM_AT_BOOT : 3;
+  /* 初始化 setView 若带缩放动画，zoomend 会在 ~250ms 后才来；那次事件不代表用户操作，
+   * 若照写就会把「我们给的默认值」记成「用户的选择」，下次启动 ZOOM_AT_BOOT 被污染。
+   * 判定方式：事件倍率仍等于 ZOOM_INIT → 视为初始化收尾，忽略；
+   * 一旦倍率与初始化值不同（用户滚轮/按钮，或 live.js 的跟随启动），才开启写盘。 */
+  var zoomPersistOn = false;
+
   /* 统一坐标口径工具函数（2026-10-27，甲方案收口）:
    * markers.js / Leaflet 格式: m.x = Leaflet lat (游戏世界 Z, 北为负), m.y = Leaflet lng (游戏世界 X, 东为正)
    * 游戏 UI / Actor 真实三维: X = 东(+), Z = 真实世界坐标 (北为负, UI显示取反), h = 海拔高度
@@ -194,7 +228,7 @@
   var map = L.map('map', {
     crs: TOTK_CRS,
     center: CENTER,
-    zoom: 5,
+    zoom: ZOOM_AT_BOOT != null ? ZOOM_AT_BOOT : 5,
     minZoom: MIN_ZOOM,
     maxZoom: MAX_ZOOM,
     zoomControl: false,
@@ -229,6 +263,17 @@
     toast('已定位到监视堡垒（导航后续接入）');
   });
   map.on('zoomend moveend', updateZoomPct);
+  /* 缩放持久化：每次缩放结束写回（zoomSnap 0.5，半级也要保留）。
+   * 只挂 zoomend，不挂 moveend —— 平移不该改写倍率。 */
+  map.on('zoomend', function () {
+    var z = map.getZoom();
+    if (!zoomPersistOn) {
+      /* 初始化收尾那次 zoomend（倍率仍是 ZOOM_INIT）不代表用户意图，跳过。 */
+      if (Math.abs(z - ZOOM_INIT) < 1e-6) return;
+      zoomPersistOn = true;
+    }
+    saveZoom(z);
+  });
   updateZoomPct();
 
     /* 全局 Canvas 高性能标点渲染图层（接管全量常规标点与大世界宝箱，万级标点 60fps） */
@@ -2769,7 +2814,7 @@
   initAreaOverlays();
   renderMarkers();
   updateCount();
-  map.setView(CENTER, 3);
+  map.setView(CENTER, ZOOM_INIT);
 
   /* 移动端横屏/视口变化自适应：解决转屏后 Canvas 畸变与地名错位 */
   function onViewportResize() {
@@ -3622,7 +3667,10 @@
      * 所以不能走 gotoArmor 的「按名字找标点」那条路，
      * 直接传一个代理标点（只用 x/y/layer/cat/name）复用完整流程：
      * 切层 → 勾分类 → flyTo → 光圈。 */
-    gotoMarker: gotoMarker
+    gotoMarker: gotoMarker,
+    /* 缩放持久化：启动时的倍率快照（null = 本机从未存过）。
+     * live.js 的 ?follow=1 启动分支据此决定用上次倍率还是导航默认 800%。 */
+    bootZoom: ZOOM_AT_BOOT
   };
 
   /* ============================================================

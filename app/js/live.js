@@ -765,10 +765,15 @@
   }
 
   /* ---------------- 视图跟随（V1.8.3：范围跟随，防持续动画晕眩/卡顿） ---------------- */
-  /* 单次定位：居中玩家，保持缩放 */
+  /* 单次定位：居中玩家，保持缩放
+   * 2026-11-12：不再用 max(zoom, 6) 强抬到 800%。
+   *   倍率由 app.js 持久化（totkmap.zoom.v1），用户在 400% 看大局时点定位
+   *   会被硬拉回 800%，等于每次重新居中都在跟用户抢缩放。
+   *   首次运行无保存倍率时，?follow=1 启动分支会把倍率定到 800%，所以这里
+   *   直接沿用当前倍率即可，跟随的初始尺度不会退化成全图。 */
   function centerOnPlayer() {
     if (pos.mx == null) return;
-    map.flyTo([pos.mx, pos.my], Math.max(map.getZoom(), 6), { duration: 0.6 }); // V2.4.0: 800%
+    map.flyTo([pos.mx, pos.my], map.getZoom(), { duration: 0.6 });
   }
   /* 跟随（V2.4.0 方案2+3，2026-10-09 老大拍板）：
    *   死区 30% → 10%（红点偏离视口中心 10% 即拉回，原 30% 太迟钝）；
@@ -1057,7 +1062,12 @@
           try {
             if (map._animatingZoom) { map._stop(); map._animatingZoom = false; map._tempFireZoomEvent = false; }
           } catch (e) {}
-          if (map && map.setView) map.setView(map.getCenter(), 6, { animate: false });
+          /* 2026-11-12 缩放持久化：有保存倍率就用用户的，只有首次运行才落到 800%。
+           * 读 TOTK.bootZoom（app.js 在自身 setView 之前抓的快照）而不是现读
+           * localStorage —— 否则 app.js 初始化写入的默认倍率会被当成用户选择。 */
+          var bootZ = (T && typeof T.bootZoom === 'number') ? T.bootZoom : null;
+          var startZ = (bootZ != null) ? bootZ : 6;
+          if (map && map.setView) map.setView(map.getCenter(), startZ, { animate: false });
           if (map && map.panTo && pos.mx != null && pos.my != null) {
             map.panTo([pos.mx, pos.my], { animate: false });
           }
