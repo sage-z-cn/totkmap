@@ -97,13 +97,14 @@
       if (!pts || pts.length < 2) return;
 
       var lineColor = isDone ? '#27ae60' : '#F4D03F';
-      var opacity = isDone ? 0.6 : 0.95;
+      /* 运输呀哈哈虚线整体弱化：描边与主体统一 50% 透明 */
+      var opacity = 0.5;
 
       // 1. 深色半透明描边底层，保证不同底图上可读
       L.polyline(pts, {
         color: 'rgba(15,20,15,0.85)',
         weight: 5,
-        opacity: 0.65,
+        opacity: opacity,
         dashArray: '6, 8',
         lineCap: 'round',
         lineJoin: 'round',

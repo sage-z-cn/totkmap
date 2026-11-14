@@ -137,7 +137,8 @@
       getMarkerSize: null,
       getIconUrl: null,
       isDone: null,
-      getLabel: null
+      getLabel: null,
+      isKorok: null          // function(m)：呀哈哈/运输呀哈哈（图标 50% 透明、不显示名称）
     },
 
     initialize: function (mapOrOptions, maybeOptions) {
@@ -305,6 +306,7 @@
       var visibleMarkers = [];
       var labelList = [];
       var hitRadiusDefault = this.options.hitRadius || 14;
+      var isKorokFn = this.options.isKorok;
 
       for (var i = 0; i < len; i++) {
         var m = data[i];
@@ -329,6 +331,12 @@
         }
 
         var isDone = checkIsDone(m, this.options);
+        /* 呀哈哈 / 运输呀哈哈（双倍克洛格）：图标半透明、名称标签一律不显示 */
+        var isKorok = isKorokFn ? !!isKorokFn(m)
+          : !!(m.cat === 73 || m.cat === 96 || m.cat === 118 ||
+               m.cat === 130 || m.cat === 145 || m.cat === 160 ||
+               m.name === '呀哈哈' || m.name === '运输呀哈哈' ||
+               m.name === '双倍克洛格' || m.name === '克洛格');
 
         var size = this.options.markerSize || 24;
         if (typeof this.options.getMarkerSize === 'function') {
@@ -340,9 +348,11 @@
 
         ctx.save();
 
-        // 完成状态置灰半透明（BOTWmap 规范：0.45）
+        // 完成状态置灰半透明（BOTWmap 规范：0.45）；呀哈哈图标固定 50%
         if (isDone) {
           ctx.globalAlpha = 0.45;
+        } else if (isKorok) {
+          ctx.globalAlpha = 0.5;
         } else {
           ctx.globalAlpha = 1.0;
         }
@@ -387,16 +397,15 @@
           radius: (m.hitRadius || m.radius || hitRadiusDefault)
         });
 
-        // 标签收集：全图不显示标签，zoom >= 5 显示重要地点，宝箱与呀哈哈在近景（zoom >= 6 即 800%+）才显示
+        // 标签收集：全图不显示标签，zoom >= 5 显示重要地点，宝箱近景显示；呀哈哈/运输呀哈哈不显示文字
         if (this.options.showNames && currentZoom >= (this.options.labelMinZoom || 5)) {
           var isChest = !!(m.drop || m.drop_zh || m.type === 'chest' || (m.id && String(m.id).indexOf('c_') === 0));
-          var isKorok = (m.cat === 130 || m.cat === 160 || (m.name && m.name.indexOf('克洛格') >= 0));
           if (isChest) {
             // 选项 A：近景（zoom >= 6 即 800%+）才显示宝箱内容，避免远景密集轰炸
             if (currentZoom >= 6) {
               labelList.push({ m: m, x: x, y: y, size: size, isDone: isDone });
             }
-          } else if (!isKorok || currentZoom >= 6) {
+          } else if (!isKorok) {
             labelList.push({ m: m, x: x, y: y, size: size, isDone: isDone });
           }
         }

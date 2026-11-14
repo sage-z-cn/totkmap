@@ -206,6 +206,14 @@
     }
     return null;
   }
+  /* 呀哈哈 / 运输呀哈哈（双倍克洛格）：按分类判定，名称兜底兼容旧数据 */
+  var KOROK_CATS = { 73: true, 96: true, 118: true, 130: true, 145: true, 160: true };
+  function isKorokMarker(m) {
+    if (!m) return false;
+    if (KOROK_CATS[m.cat]) return true;
+    return m.name === '呀哈哈' || m.name === '运输呀哈哈' ||
+      m.name === '双倍克洛格' || m.name === '克洛格';
+  }
   function countDone(catId) {
     var n = 0;
     for (var i = 0; i < MARKERS.length; i++) {
@@ -283,6 +291,7 @@
         var doneId = m.korokStartId || m.id;
         return !!(state.done && state.done[doneId]);
       },
+      isKorok: isKorokMarker,
       showNames: !!state.showNames,
       labelMinZoom: LABEL_MIN_ZOOM,
       getLabel: function (m) {
@@ -918,7 +927,9 @@
     for (var id in state.markers) {
       var mk = state.markers[id];
       if (!mk) continue;
-      var show = state.showNames && z >= LABEL_MIN_ZOOM && bounds.contains(mk.getLatLng());
+      var tm = mk._totkMarker;
+      /* 呀哈哈 / 运输呀哈哈只显示图标，不显示图标下方名称；DOM 兜底路径同样跳过 */
+      var show = !isKorokMarker(tm) && state.showNames && z >= LABEL_MIN_ZOOM && bounds.contains(mk.getLatLng());
       if (show) { if (!mk.isTooltipOpen()) mk.openTooltip(); }
       else { if (mk.isTooltipOpen()) mk.closeTooltip(); }
     }
