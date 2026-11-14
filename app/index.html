@@ -103,7 +103,7 @@
   </div>
 
   <!-- ===== 探索度（加载存档后显示） ===== -->
-  <div class="progress-section" id="progressSection">
+  <div class="progress-section collapsed" id="progressSection">
     <div class="progress-head" id="progressHead" data-i18n-title="progress.toggleTip" title="点击展开/收起">
       <span class="progress-toggle" id="progressToggle" aria-hidden="true"></span>
       <span class="progress-title" data-i18n="progress.title">探索度</span>
@@ -561,9 +561,9 @@
      NoSleep.js 同款规避；手势续播逻辑见 live.js wakeLockKeeper -->
 <!-- V2.0：龙轨迹图层（独立模块）。数据已改为 ROM 官方轨道 dragon_paths_rom.js，
      旧的社区近似数据 data/dragon_paths.js 不再加载（保留文件仅作对照） -->
-<script src="js/dragon-layer.js?v=256"></script>
-<!-- 实时龙位置：轮询 /dragons，按当前层画龙标记 -->
-<script src="js/dragon-live.js?v=6"></script>
+<script src="js/dragon-layer.js?v=257"></script>
+<!-- 实时龙位置：轮询 /dragons，按当前层画龙标记（跟随「龙的轨迹」分类开关） -->
+<script src="js/dragon-live.js?v=8"></script>
 <!-- V2.5：克洛格运输轨迹图层（独立模块，参考 BOTWmap 轨迹设计） -->
 <script src="js/korok-layer.js?v=255"></script>
 <!-- V2.1：任务板块（独立模块）。data/task-plan.js 由 tools/build_task_plan.py 生成，

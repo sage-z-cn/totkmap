@@ -154,7 +154,6 @@ func serveRun(p Platform, plat *totkpcPlatform, anchor *[3]float32, addr uintptr
 	mux.HandleFunc("/gui", handleGuiPC)
 	mux.HandleFunc("/dragons", handleDragonsPC)
 	mux.HandleFunc("/dragons/rescan", handleDragonsRescanPC)
-	mux.HandleFunc("/dragons/calibrate", handleDragonsCalibratePC)
 
 	initLanURL(port)
 

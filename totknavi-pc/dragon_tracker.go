@@ -372,53 +372,6 @@ func handleDragonsRescanPC(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, `{"ok":true}`)
 }
 
-// handleDragonsCalibratePC GET /dragons/calibrate?id=&mx=&my=&gz=
-// 手动校准：网页地图点击龙的位置（Leaflet latlng = (Z北, X东)），反算轨道弧长，
-// 之后按 5 m/s 沿轨道推算，不再依赖内存地址。
-func handleDragonsCalibratePC(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	t := dragonTrk
-	if t == nil {
-		fmt.Fprint(w, `{"ok":false,"error":"tracker not started"}`)
-		return
-	}
-	id := r.URL.Query().Get("id")
-	mx, _ := strconv.ParseFloat(r.URL.Query().Get("mx"), 64)
-	my, _ := strconv.ParseFloat(r.URL.Query().Get("my"), 64)
-	_ = r.URL.Query().Get("gz") // 网页点击没有精确高度，按水平最近点匹配
-	if id == "" || (mx == 0 && my == 0) {
-		fmt.Fprint(w, `{"ok":false,"error":"id/mx/my required"}`)
-		return
-	}
-	for i := range t.rails {
-		if t.rails[i].Id != id {
-			continue
-		}
-		best := math.MaxFloat64
-		bi := 0
-		for k := range t.rails[i].Points {
-			dx := my - t.rails[i].Points[k].X
-			dy := mx - t.rails[i].Points[k].Y
-			d := dx*dx + dy*dy
-			if d < best {
-				best = d
-				bi = k
-			}
-		}
-		s := t.rails[i].Cum[bi]
-		t.mu.Lock()
-		t.railT[i] = s
-		t.lastGood[i] = time.Now()
-		t.live[i].Locked = true
-		t.live[i].Simulated = false
-		t.live[i].Updated = time.Now().UnixMilli()
-		t.mu.Unlock()
-		fmt.Fprintf(w, `{"ok":true,"id":"%s","dist":%.1f}`, id, math.Sqrt(best))
-		return
-	}
-	fmt.Fprint(w, `{"ok":false,"error":"unknown dragon"}`)
-}
-
 // railAt 按弧长 s 在轨道上插值（超出长度自动取模，闭合轨道）。
 func railAt(r *dragonRail, s float64) (float64, float64, float64) {
 	if len(r.Points) == 0 || r.TotalLen <= 0 {

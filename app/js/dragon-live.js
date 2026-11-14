@@ -5,14 +5,15 @@
  *   { ok, items:[{id,name,gx,gy,gz,mx,my,layer,simulated,locked,updated}] }
  * 渲染：按当前地图层（18 地上 / 19 地下 / 20 天空）显示已锁定且同层的龙；
  *       simulated=false 时用空心圈表示"该龙不在附近、坐标为最后缓存"。
- * 开关：地图右上角「龙」按钮（localStorage 记忆）。
+ * 开关：跟随当前层「龙的轨迹」分类（与 dragon-layer.js 同一开关），
+ *       关闭时实时图标一并隐藏；不再提供右上角独立按钮与校准入口。
  * 说明：龙的飞行轨迹由已有的 dragon-layer.js 负责（侧栏「龙的轨迹」分类），
  *       本模块只画实时位置标记，不重复画线。
  * ============================================================ */
 (function () {
   'use strict';
 
-  var LS_KEY = 'totkmap.dragonLive.on.v1';
+  var CAT_ID = { 18: 229, 19: 230, 20: 231 };
   var COLORS = {
     light: '#e8e6f0', dinraal: '#ff6b4a', naydra: '#6ec8ff', farosh: '#ffe066'
   };
@@ -27,9 +28,9 @@
 
   var map = null;
   var group = null;
-  var enabled = localStorage.getItem(LS_KEY) !== '0';
   var lastItems = [];
-  var btn = null;
+  var lastOn = null;
+  var lastLayer = null;
 
   function currentLayer() {
     if (window.TOTK && window.TOTK.state && window.TOTK.state.layer != null) {
@@ -37,6 +38,14 @@
     }
     var active = document.querySelector('#layerSwitch button.active');
     return active ? Number(active.getAttribute('data-layer')) : 18;
+  }
+
+  /* 与 dragon-layer.js 的 isOn() 同口径：当前层勾了「龙的轨迹」= 显示。 */
+  function trailOn() {
+    var s = window.TOTK && window.TOTK.state;
+    if (!s || !s.selected) return false;
+    var id = CAT_ID[currentLayer()];
+    return !!(id && s.selected[id]);
   }
 
   var ICONS = {
@@ -52,11 +61,11 @@
     st.id = 'dlg-live-css';
     st.textContent =
       '@keyframes dlg-live-pulse{' +
-      '0%,100%{transform:scale(1);filter:drop-shadow(0 0 2px var(--glow)) drop-shadow(0 0 7px var(--glow)) drop-shadow(0 2px 5px rgba(0,0,0,.8));}' +
-      '50%{transform:scale(1.18);filter:drop-shadow(0 0 9px var(--glow)) drop-shadow(0 0 22px var(--glow)) drop-shadow(0 2px 5px rgba(0,0,0,.8));}' +
+      '0%,100%{filter:drop-shadow(0 0 2px var(--glow)) drop-shadow(0 0 6px var(--glow)) drop-shadow(0 2px 5px rgba(0,0,0,.8));}' +
+      '50%{filter:drop-shadow(0 0 8px var(--glow)) drop-shadow(0 0 18px var(--glow)) drop-shadow(0 2px 5px rgba(0,0,0,.8));}' +
       '}' +
-      '.dlg-live-marker>div{animation:dlg-live-pulse 1.8s ease-in-out infinite;transform-origin:center center;}' +
-      '.dlg-live-marker.dlg-stale>div{animation:none;transform:none;filter:drop-shadow(0 2px 5px rgba(0,0,0,.8));opacity:.55;}';
+      '.dlg-live-marker>div{animation:dlg-live-pulse 1.8s ease-in-out infinite;}' +
+      '.dlg-live-marker.dlg-stale>div{animation:none;filter:drop-shadow(0 2px 5px rgba(0,0,0,.8));opacity:.55;}';
     document.head.appendChild(st);
   }
 
@@ -82,6 +91,9 @@
     if (!map) return;
     if (group) { map.removeLayer(group); group = null; }
 
+    /* 跟随「龙的轨迹」图层开关：关闭时实时图标也一并隐藏。 */
+    if (!trailOn()) return;
+
     // 通知轨迹图层：有实时位置的龙隐藏静态头像，避免重复。
     var liveIds = {};
     lastItems.forEach(function (d) {
@@ -90,8 +102,6 @@
     if (window.DragonLayer && window.DragonLayer.setLiveIds) {
       window.DragonLayer.setLiveIds(liveIds);
     }
-
-    if (!enabled) return;
 
     var layer = currentLayer();
     var g = L.layerGroup();
@@ -121,73 +131,26 @@
     } catch (e) { /* 服务未启动时静默 */ }
   }
 
-  function startCalibrate() {
-    var pick = prompt('校准哪条龙？\n1 = 白龙\n2 = 奥尔龙\n3 = 聂尔龙\n4 = 费罗龙');
-    var ids = { '1': 'light', '2': 'dinraal', '3': 'naydra', '4': 'farosh' };
-    var did = ids[pick];
-    if (!did) return;
-    alert('请在地图上点击龙当前所在位置');
-    map.once('click', function (e) {
-      var url = API + '/dragons/calibrate?id=' + did +
-        '&mx=' + e.latlng.lat + '&my=' + e.latlng.lng;
-      fetch(url, { cache: 'no-store' })
-        .then(function (r) { return r.json(); })
-        .then(function (j) {
-          if (j && j.ok) { poll(); }
-          else { alert('校准失败：' + (j && j.error || '未知错误')); }
-        })
-        .catch(function () { alert('校准请求失败'); });
-    });
-  }
-
-  function ensureButton() {
-    if (btn || !map) return;
-    var Ctl = L.Control.extend({
-      options: { position: 'topright' },
-      onAdd: function () {
-        var div = L.DomUtil.create('div', 'leaflet-bar');
-        btn = L.DomUtil.create('a', '', div);
-        btn.href = '#';
-        btn.title = '龙实时位置';
-        btn.innerHTML = '龙';
-        btn.style.cssText = 'display:flex;align-items:center;justify-content:center;width:30px;height:30px;' +
-          'font:600 14px/1 system-ui,sans-serif;text-decoration:none;color:#333;background:#fff;';
-        L.DomEvent.on(btn, 'click', function (e) {
-          L.DomEvent.preventDefault(e);
-          enabled = !enabled;
-          localStorage.setItem(LS_KEY, enabled ? '1' : '0');
-          updateBtn();
-          render(lastItems);
-        });
-        var cal = L.DomUtil.create('a', '', div);
-        cal.href = '#';
-        cal.title = '校准龙位置（点击地图上龙的位置）';
-        cal.innerHTML = '校';
-        cal.style.cssText = 'display:flex;align-items:center;justify-content:center;width:30px;height:30px;' +
-          'font:600 13px/1 system-ui,sans-serif;text-decoration:none;color:#555;background:#fff;' +
-          'border-top:1px solid #ddd;';
-        L.DomEvent.on(cal, 'click', function (e) {
-          L.DomEvent.preventDefault(e);
-          startCalibrate();
-        });
-        return div;
-      }
-    });
-    map.addControl(new Ctl());
-    updateBtn();
-  }
-
-  function updateBtn() {
-    if (!btn) return;
-    btn.style.background = enabled ? '#ffe9a8' : '#fff';
-    btn.style.color = enabled ? '#6b4a00' : '#888';
+  /* 分类勾选 / 切层都不会触发事件，轮询兜底：开关或图层一变立刻重画，打开时立即取一帧。 */
+  function observeState() {
+    setInterval(function () {
+      var on = trailOn();
+      var layer = currentLayer();
+      if (on === lastOn && layer === lastLayer) return;
+      lastOn = on;
+      lastLayer = layer;
+      render(lastItems);
+      if (on) poll();
+    }, 200);
   }
 
   function init() {
     map = (window.TOTK && window.TOTK.map) || null;
     if (!map) { setTimeout(init, 300); return; }
     injectCSS();
-    ensureButton();
+    lastOn = trailOn();
+    lastLayer = currentLayer();
+    observeState();
     poll();
     setInterval(poll, 1000);
   }

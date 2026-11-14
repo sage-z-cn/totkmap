@@ -199,33 +199,21 @@
       if (d.layer === 20) { if (!isSky) return; }
       else { if (isSky) return; }
 
-      var main, ghost;   /* main = 实线（本层域内），ghost = 虚线（另一层） */
+      var main;
       if (isSky) {
-        main = [{ segs: d.segments, dash: null, w: 4.2 }];
-        ghost = (d.extraRails || []).map(function (e) {
-          return { segs: e.segments, dash: e.railName.indexOf('Inter') >= 0 ? '7,6' : '2,8', w: 2.4 };
-        });
+        main = [{ segs: d.segments, dash: '8,7', w: 4.2 }];
       } else if (isDepth) {
-        main = (d.depthSegs || []).map(function (s) { return { segs: s, dash: null, w: 3.6 }; });
-        ghost = (d.groundSegs || []).map(function (s) { return { segs: s, dash: '8,7', w: 2.6 }; });
+        /* 地下层：只显示地下段虚线，隐藏地表段 */
+        main = (d.depthSegs || []).map(function (s) { return { segs: s, dash: '8,7', w: 3.6 }; });
       } else {
-        main = (d.groundSegs || []).map(function (s) { return { segs: s, dash: null, w: 3.8 }; });
-        ghost = (d.depthSegs || []).map(function (s) { return { segs: s, dash: '8,7', w: 2.6 }; });
+        /* 地上层：只显示地表段虚线，隐藏地下段 */
+        main = (d.groundSegs || []).map(function (s) { return { segs: s, dash: '8,7', w: 3.8 }; });
       }
 
-      /* 虚线（另一层域）先画，压在实线下面；用龙的本色但半透明以示"非本层" */
-      ghost.forEach(function (s) {
-        if (!s.segs || s.segs.length < 2) return;
-        drawLine(g, d, s.segs, {
-          dash: s.dash, weight: s.w, opacity: 0.42,
-          tip: d.name + ' · ' + (isDepth ? '地上段' : '地下段')
-        });
-      });
-
-      /* 实线（本层域内）+ 方向箭头 + 龙头像 */
+      /* 本层轨迹统一虚线 + 方向箭头 + 龙头像 */
       main.forEach(function (s) {
         if (!s.segs || s.segs.length < 2) return;
-        drawLine(g, d, s.segs, { dash: null, weight: s.w, opacity: 1 });
+        drawLine(g, d, s.segs, { dash: s.dash, weight: s.w, opacity: 1 });
         addArrows(g, d, s.segs, d.color);
         addDragonHead(g, d, s.segs);
       });
