@@ -47,7 +47,7 @@
 
   /* ---------- 样式注入 ---------- */
   var CSS = '' +
-    '.korok-camp-pin{cursor:pointer;transition:transform .15s ease;filter:drop-shadow(0 2px 4px rgba(0,0,0,.7));}' +
+    '.korok-camp-pin{cursor:pointer;transition:transform .15s ease;opacity:0.5;filter:drop-shadow(0 2px 4px rgba(0,0,0,.7));}' +
     '.korok-camp-pin:hover{transform:scale(1.25);z-index:999!important;}' +
     '.korok-camp-pin.done{opacity:0.45;filter:grayscale(60%);}' +
     '.korok-path-line{cursor:pointer;}';
