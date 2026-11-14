@@ -24,20 +24,14 @@ export default {
     openBrowser: 'Open in browser',
     mapOffline: 'Offline map',
     mapOnline: 'Online map',
-    mapNone: 'Not connected',
     launchGame: 'Launch game',
     gameRunning: 'Game running',
     launching: 'Game launched (PID {pid})'
   },
   map: {
-    notRunning: 'Location service is not running',
-    notRunningHint: 'Start it to follow your position right here — no need to switch to a browser.',
-    startService: 'Start location service',
     starting: 'Starting location service…',
     startingHint: 'The core process is up; waiting for the local map port. This usually takes 1–2 seconds.',
-    retry: 'Retry',
-    portBusy: 'Map port is already in use',
-    portBusyHint: 'Port 8766 on this PC is taken by another program, so the embedded map cannot load. Close that program and hit Refresh, or open the map in your browser instead.'
+    retry: 'Retry'
   },
   sync: {
     waiting: 'Waiting for coordinate stream',

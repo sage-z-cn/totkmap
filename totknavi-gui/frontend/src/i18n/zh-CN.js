@@ -23,20 +23,14 @@ export default {
     openBrowser: '在浏览器打开',
     mapOffline: '离线地图',
     mapOnline: '在线地图',
-    mapNone: '未连接',
     launchGame: '启动游戏',
     gameRunning: '游戏运行中',
     launching: '已启动游戏（PID {pid}）'
   },
   map: {
-    notRunning: '定位服务未启动',
-    notRunningHint: '启动后可在本窗口内直接查看实时位置，无需另开浏览器。',
-    startService: '启动定位服务',
     starting: '定位服务启动中…',
     startingHint: '核心进程已启动，正在等待网页地图端口就绪；通常 1~2 秒即可。',
-    retry: '重试',
-    portBusy: '网页地图端口被占用',
-    portBusyHint: '本机 8766 端口被其他程序占用，内嵌地图无法加载；关闭占用该端口的程序后点「刷新」重试，或先在浏览器里打开。'
+    retry: '重试'
   },
   sync: {
     waiting: '等待坐标流',

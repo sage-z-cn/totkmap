@@ -80,6 +80,11 @@ type App struct {
 	windowSaved      bool
 	savedPlacement   wlWindowPlacement
 	moveTargetHandle uintptr
+
+	// GUI 自带网页地图托管（mapserver.go）：核心未启动时也能看地图
+	mapSrv      *http.Server
+	mapRoot     string
+	localMapURL string
 }
 
 // Config GUI 持久化配置（xnavi-gui-config.json）。
@@ -166,6 +171,7 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.cfg = a.loadConfig()
 	a.tailInit()
+	a.startLocalMapServer()
 	go a.eventBridge(ctx)
 	go a.watchGame(ctx)
 	// go a.checkUpdate() // 取消启动自动检查更新
@@ -543,6 +549,7 @@ func openSaveLocation(savePath string) error {
 }
 
 func (a *App) onShutdown(ctx context.Context) {
+	a.stopLocalMapServer()
 	a.stopCoreLocked()
 }
 
@@ -740,6 +747,8 @@ func (a *App) CoreStatus() map[string]any {
 	gameRunning := a.gameRunning
 	gamePid := a.gamePid
 	gameName := a.gameName
+	mapRoot := a.mapRoot
+	localMapURL := a.localMapURL
 	a.mu.Unlock()
 	obj := map[string]any{"running": running}
 	buf, err := os.ReadFile(a.statusPath())
@@ -768,8 +777,10 @@ func (a *App) CoreStatus() map[string]any {
 	obj["gameRunning"] = gameRunning
 	obj["gamePid"] = gamePid
 	obj["gameName"] = gameName
-	// 离线地图：workDir\app\index.html 存在才可内嵌浏览。
-	obj["hasOfflineMap"] = pathExists(filepath.Join(a.workDir, "app", "index.html"))
+	// 内置地图：GUI 自带托管（mapserver.go），核心未启动也可浏览。
+	// hasOfflineMap 保留旧字段名：true 表示本机有可用的 app/ 网页目录。
+	obj["hasOfflineMap"] = mapRoot != ""
+	obj["localMapURL"] = localMapURL
 	return obj
 }
 

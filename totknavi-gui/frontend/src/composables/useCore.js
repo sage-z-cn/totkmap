@@ -184,19 +184,25 @@ export function openMap() { rt.BrowserOpenURL(buildMapUrl()) }
 export function openExternal(url) { rt.BrowserOpenURL(url) }
 
 // ---- 内嵌地图来源 ----
-// 离线优先：core 的 web 端（127.0.0.1:8766）内容与线上站点同源，但不受断网影响。
-// 可用性沿用 status.json 的 appReady（app/ 目录 + index.html 就绪）；
-// 打包版不带 app/ 目录时，靠 hasOfflineMap（GUI 自带离线地图）放行。
+// 优先级：
+// 1) GUI 自带托管（localMapURL，mapserver.go 随 GUI 启动托管 app/）——定位服务未启动也能看，完全离线；
+// 2) 核心 web 端（127.0.0.1:8766，app/ 由核心托管）；
+// 3) 在线站点（需联网）。
 export const OFFLINE_MAP_ORIGIN = 'http://127.0.0.1:8766'
+
+// GUI 进程内静态托管的 origin（Go 下发）；为空表示本机没有可用的 app/ 目录。
+export const localMapURL = ref('')
+// 首次初始化完成才挂 iframe：避免先加载在线站点、再切到内置托管白闪一次。
+export const initDone = ref(false)
 export const mapMode = computed(() => {
-  if (!coreRunning.value || !webOK.value) return 'none'
-  if (appReady.ok || (hasOfflineMap.value && appReady.reason === '')) return 'offline'
+  if (localMapURL.value) return 'offline'
+  if (coreRunning.value && webOK.value && (appReady.ok || (hasOfflineMap.value && appReady.reason === ''))) return 'offline'
   return 'online'
 })
 export const mapSrc = computed(() => {
+  if (localMapURL.value) return `${localMapURL.value}/?follow=1&game=totk`
   if (mapMode.value === 'offline') return `${OFFLINE_MAP_ORIGIN}/?follow=1&game=totk`
-  if (mapMode.value === 'online') return buildMapUrl()
-  return ''
+  return buildMapUrl()
 })
 // 刷新地图：跨源 iframe 拿不到 contentWindow，只能靠改 src + 时间戳强制重载
 export const mapRefreshTick = ref(Date.now())
@@ -210,7 +216,9 @@ export function refreshMap() {
 
 // 核心进程起来 ≠ HTTP 8766 已 listen；iframe 若在 listen 之前加载会停在
 // "127.0.0.1 拒绝连接"且不会自己恢复。这里先探测 /pos，通达后再挂 iframe。
-export const mapServerReady = ref(false)
+// GUI 自带托管与在线站点不需要探测，可直接加载。
+const coreMapReady = ref(false)
+export const mapServerReady = computed(() => !!localMapURL.value || mapMode.value === 'online' || coreMapReady.value)
 let mapProbeTimer = 0
 let mapProbeDeadline = 0
 function stopMapProbe() {
@@ -220,16 +228,16 @@ function stopMapProbe() {
   }
 }
 async function probeMapServer() {
-  if (!coreRunning.value || !webOK.value) {
-    mapServerReady.value = false
+  if (!coreRunning.value || !webOK.value || localMapURL.value) {
+    coreMapReady.value = false
     stopMapProbe()
     return
   }
-  if (mapServerReady.value) return
+  if (coreMapReady.value) return
   try {
     const r = await fetch(`${OFFLINE_MAP_ORIGIN}/pos?t=${Date.now()}`, { cache: 'no-store' })
     if (r.ok) {
-      mapServerReady.value = true
+      coreMapReady.value = true
       mapRefreshTick.value = Date.now()
       stopMapProbe()
       return
@@ -239,27 +247,27 @@ async function probeMapServer() {
     mapProbeTimer = setTimeout(probeMapServer, 500)
   }
 }
-watch([coreRunning, webOK], ([run, ok]) => {
-  if (run && ok) {
-    if (!mapServerReady.value) {
+watch([coreRunning, webOK, localMapURL], ([run, ok, local]) => {
+  if (run && ok && !local) {
+    if (!coreMapReady.value) {
       mapProbeDeadline = Date.now() + 15000
       stopMapProbe()
       probeMapServer()
     }
   } else {
-    mapServerReady.value = false
+    coreMapReady.value = false
     stopMapProbe()
   }
 }, { immediate: true })
 
 // 核心重启时 iframe 可能停在"拒绝连接"；定期探活，掉线就回退到启动遮罩并重新探测。
 setInterval(async () => {
-  if (!mapServerReady.value || !coreRunning.value) return
+  if (!coreMapReady.value || !coreRunning.value || localMapURL.value) return
   try {
     const r = await fetch(`${OFFLINE_MAP_ORIGIN}/pos?t=${Date.now()}`, { cache: 'no-store' })
     if (r.ok) return
   } catch { /* 掉线 */ }
-  mapServerReady.value = false
+  coreMapReady.value = false
   mapProbeDeadline = Date.now() + 15000
   probeMapServer()
 }, 3000)
@@ -551,6 +559,7 @@ function applyStatus(st) {
   gamePid.value = st.gamePid || 0
   gameName.value = st.gameName || ''
   hasOfflineMap.value = !!st.hasOfflineMap
+  if (st.localMapURL !== undefined) localMapURL.value = st.localMapURL || ''
   webOK.value = st.webOK !== false
   if (st.target !== undefined) target.value = st.target
   if (st.saveMtime) {
@@ -628,6 +637,9 @@ export async function initCore() {
   mapRefreshTick.value = Date.now()
   logs.value = []
   steps.value.forEach(s => { s.state = s.key === 'ready' ? 'done' : 'idle' })
+  // GUI 自带地图托管地址（核心未启动也能看图）；旧后端无此绑定时回退在线地图
+  try { localMapURL.value = (await api.LocalMapURL()) || '' } catch { /* 忽略 */ }
+  initDone.value = true
   ver.value = await api.Version()
   const c = await api.LoadConfig()
   if (c.saveDirRyujinx) cfg.saveDirRyujinx = c.saveDirRyujinx

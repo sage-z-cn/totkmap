@@ -53,8 +53,8 @@
           <span class="w-1.5 h-1.5 rounded-full" :class="badgeDot"></span>
           <span>{{ badgeText }}</span>
         </span>
-        <button @click="refreshMap" :disabled="!coreRunning"
-          class="h-[26px] px-2.5 rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] flex items-center gap-1.5 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed">
+        <button @click="refreshMap"
+          class="h-[26px] px-2.5 rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] flex items-center gap-1.5 transition active:scale-95">
           <span>↻</span>
           <span>{{ t('toolbar.refresh') }}</span>
         </button>
@@ -88,14 +88,11 @@ const mapDot = computed(() => {
 })
 
 const badgeText = computed(() => {
-  if (mapMode.value === 'offline') return t('toolbar.mapOffline')
-  if (mapMode.value === 'online') return t('toolbar.mapOnline')
-  return t('toolbar.mapNone')
+  return mapMode.value === 'offline' ? t('toolbar.mapOffline') : t('toolbar.mapOnline')
 })
 const badgeClass = computed(() => {
   if (mapMode.value === 'offline') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-  if (mapMode.value === 'online') return 'border-blue-500/30 bg-blue-500/10 text-sky-300'
-  return 'border-slate-700 bg-slate-800/60 text-slate-500'
+  return 'border-blue-500/30 bg-blue-500/10 text-sky-300'
 })
-const badgeDot = computed(() => mapMode.value === 'none' ? 'bg-slate-600' : (mapMode.value === 'offline' ? 'bg-emerald-400' : 'bg-sky-400'))
+const badgeDot = computed(() => mapMode.value === 'offline' ? 'bg-emerald-400' : 'bg-sky-400')
 </script>
